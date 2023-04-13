@@ -18,7 +18,7 @@ __HPC__ = 'XXX HPC of XXX'
 # Set up
 key = ['billing','cpu','gres/gpu:a100']  # Keywords to be captured from alloctres field of sacct
 isRestricted = False                      # True = display only jobs related by associated accounts
-SLURM_STARTDATE = '2023-02-20T14:30:00'
+SLURM_STARTDATE = '2023-04-13T00:00:00'
 
 Service = 'Service'
 calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100

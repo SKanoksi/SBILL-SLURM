@@ -28,11 +28,15 @@ GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS
 2. Copy sbill to a directory, such as /usr/local/bin 
 --> cp sbill /usr/local/bin
 
-3. In ~/.bashrc, prepend the path of the directory to the PATH environment variable  
+3. Change permission of the file, such as
+--> chomd 755 /usr/local/bin/sbill
+
+4. In ~/.bashrc, prepend the path of the directory to the PATH environment variable 
+   (if not already done --> see echo $PATH)
 --> vi .bashrc
 --> export PATH=/usr/local/bin:${PATH} # (Last line of ~/.bashrc)
 
-4. Try 'sbill -h' or 'sbill -V'
+5. Try 'sbill -h' or 'sbill -V'
 
 Note:
 To hide the setup of your system, you could use cython to convert and compile sbill to an executable. 

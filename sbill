@@ -679,7 +679,8 @@ if len(state_selected) != 0 or len(range_minmax) >= 1 :
     elif len(range_minmax) > 1 :
         print(' --range=' + str(range_minmax[0]) + '-' + str(range_minmax[1]), end='')
     print('')
-print('')
+if len(slurm_filter_opts) != 0 or len(state_selected) != 0 or len(range_minmax) >= 1 :
+    print('')
 
 # 3. Print total
 Format = '{:,.' + str(ServiceDecimal) + 'f}'

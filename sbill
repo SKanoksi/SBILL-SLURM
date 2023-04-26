@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# SBILL version 1.4.1
+# SBILL version 1.4.2
 #
 # Query SLURM billing per job through SLURM sacct command
 #
@@ -12,13 +12,13 @@
 # + numpy  (>=1.11.0) -- Optional, only for --histogram option
 # + SLURM
 #
-__version__ = '1.4.1 (06 April 2023)'
-__HPC__ = 'XXX HPC of XXX'
+__version__ = '1.4.2 (24 April 2023)'
+__HPC__ = 'XXX HPC of XXX center'
 
 # Set up
-key = ['billing','cpu','gres/gpu:a100']  # Keywords to be captured from alloctres field of sacct
-isRestricted = False                      # True = display only jobs related by associated accounts
-SLURM_STARTDATE = '2023-04-13T00:00:00'
+key = ['billing','cpu','gres/gpu:a100']  # Keywords to be captured from sacct
+isRestricted = True                      # True = display only jobs related by associated accounts
+SLURM_STARTDATE = '2023-04-06T00:00:00'
 
 Service = 'Service'
 calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100
@@ -29,7 +29,7 @@ calCPUusage = lambda ncpu, elapsedraw : ncpu*elapsedraw/60/60
 CPUusageDecimal = 2
 
 GPUusage = 'GPU-card-hour'
-calGPUusage = lambda ngpu, elapsedraw : ngpu*elapsedraw/60/60
+calGPUusage = lambda ngpu, elapsedraw : ngpu*elapsedraw/60/60 # *7433 = A100 cores per card
 GPUusageDecimal = 2
 
 GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]
@@ -183,31 +183,81 @@ def parse_filter_opts(i, opt1, opt2, has_argv, var=slurm_filter_opts):
 while i < len(argv) :
     j = i
     # Slurm filter options
-    i = parse_filter_opts(i,'-A','--accounts', has_argv=True)
+    try:
+        i = parse_filter_opts(i,'-A','--accounts', has_argv=True)
+    except IndexError :
+        print('Invalid input argument in -A, --accounts option :: List of accounts was NOT given.')
+        exit(1)
     if i != j : continue ;
+
     i = parse_filter_opts(i,'-a','--allusers', has_argv=False)
     if i != j : continue ;
+
     i = parse_filter_opts(i,'-L','--allclusters', has_argv=False)
     if i != j : continue ;
-    i = parse_filter_opts(i,'-E','--endtime', has_argv=True)
+
+    try:
+        i = parse_filter_opts(i,'-E','--endtime', has_argv=True)
+    except IndexError :
+        print('Invalid input argument in -E, --endtime option :: Endtime was NOT specified.')
+        exit(1)
     if i != j : continue ;
-    i = parse_filter_opts(i,'-j','--jobs', has_argv=True)
+
+    try:
+        i = parse_filter_opts(i,'-j','--jobs', has_argv=True)
+    except IndexError :
+        print('Invalid input argument in -j, --jobs option :: List of job id was NOT given.')
+        exit(1)
     if i != j : continue ;
-    i = parse_filter_opts(i,'','--name', has_argv=True)
+
+    try:
+        i = parse_filter_opts(i,'','--name', has_argv=True)
+    except IndexError :
+        print('Invalid input argument in --name option :: List of job names was NOT given.')
+        exit(1)
     if i != j : continue ;
-    i = parse_filter_opts(i,'-i','--nnodes', has_argv=True)
+
+    try:
+        i = parse_filter_opts(i,'-i','--nnodes', has_argv=True)
+    except IndexError :
+        print('Invalid input argument in -i, --nnodes option :: The number of nodes was NOT given.')
+        exit(1)
     if i != j : continue ;
-    i = parse_filter_opts(i,'-N','--nodelist', has_argv=True)
+
+    try:
+        i = parse_filter_opts(i,'-N','--nodelist', has_argv=True)
+    except IndexError :
+        print('Invalid input argument in -N, --nodelist option :: List of nodes was NOT given.')
+        exit(1)
     if i != j : continue ;
-    i = parse_filter_opts(i,'-r','--partition', has_argv=True)
+
+    try:
+        i = parse_filter_opts(i,'-r','--partition', has_argv=True)
+    except IndexError :
+        print('Invalid input argument in -r, --partition option :: List of partition names was NOT given.')
+        exit(1)
     if i != j : continue ;
-    i = parse_filter_opts(i,'-S','--starttime', has_argv=True)
+
+    try:
+        i = parse_filter_opts(i,'-S','--starttime', has_argv=True)
+    except IndexError :
+        print('Invalid input argument in -S, --starttime option :: Starttime was NOT specified.')
+        exit(1)
     if i != j : continue ;
-    i = parse_filter_opts(i,'-u','--user', has_argv=True)
+
+    try:
+        i = parse_filter_opts(i,'-u','--user', has_argv=True)
+    except IndexError :
+        print('Invalid input argument in -u, --user option :: Username was NOT given.')
+        exit(1)
     if i != j : continue ;
 
     # Sbill filter options
-    i = parse_filter_opts(i,'-s','--state', has_argv=True, var=temp_opt) # Borrow
+    try:
+        i = parse_filter_opts(i,'-s','--state', has_argv=True, var=temp_opt) # Borrow
+    except IndexError :
+        print('Invalid input argument in -s, --state option :: List of states was NOT given.')
+        exit(1)
     if len(temp_opt) > 1 :
         state_selected = temp_opt[1].split(',')
     elif len(temp_opt) == 1 :
@@ -218,7 +268,11 @@ while i < len(argv) :
     if i != j : temp_opt = [] ; continue ;
 
     # Format options
-    i = parse_filter_opts(i,'-o','--format', has_argv=True, var=temp_opt) # Borrow
+    try:
+        i = parse_filter_opts(i,'-o','--format', has_argv=True, var=temp_opt) # Borrow
+    except IndexError :
+        print('Invalid input argument in -o, --format option :: Format was not specified.')
+        exit(1)
     if len(temp_opt) > 1 :
         slurm_format_opts = temp_opt[1].split(',')
     elif len(temp_opt) == 1 :
@@ -229,7 +283,11 @@ while i < len(argv) :
     if i != j : temp_opt = [] ; continue ;
 
     # Output options
-    i = parse_filter_opts(i,'-H','--histogram', has_argv=True, var=temp_opt) # Borrow
+    try:
+        i = parse_filter_opts(i,'-H','--histogram', has_argv=True, var=temp_opt) # Borrow
+    except IndexError :
+        print('Invalid input argument in -H, --histogram option :: The number of bins was NOT given, try \"-H 10\".')
+        exit(1)
     if len(temp_opt) > 1 :
         is_show_job_histogram = True
         try:
@@ -295,7 +353,12 @@ while i < len(argv) :
     # Other sacct options
     i = parse_filter_opts(i,'','--noconvert', has_argv=False, var=slurm_other_format_opts)
     if i != j : continue ;
-    i = parse_filter_opts(i,'','--units', has_argv=True, var=slurm_other_format_opts)
+
+    try:
+        i = parse_filter_opts(i,'','--units', has_argv=True, var=slurm_other_format_opts)
+    except IndexError :
+        print('Invalid input argument in --units option :: Units was not specified.')
+        exit(1)
     if i != j : continue ;
 
     # Summary report only
@@ -334,7 +397,7 @@ def get_tres(string, key):
         return int(string[start:end])
 
 
-def parse_alloctres(datain, key, maxcharperline=150):
+def parse_alloctres(datain, key, default_charperline=150):
 
     nrow = datain.count('\n')
     dataout = {}
@@ -343,15 +406,14 @@ def parse_alloctres(datain, key, maxcharperline=150):
 
     if nrow == 0 :
         return dataout
-    else:
-        test = datain.find("\n", 0, maxcharperline)
-        while test == -1 :
-            maxcharperline += 100
-            test = datain.find("\n", 0, maxcharperline)
 
     start = 0
     for i in range(nrow):
-        end = datain.find("\n", start, start+maxcharperline)
+        charperline = default_charperline
+        end = datain.find("\n", start, start+charperline)
+        while end == -1 :
+            charperline += 100
+            end = datain.find("\n", start, start+charperline)
         temp = datain[start:end]
 
         for k in key :
@@ -362,7 +424,7 @@ def parse_alloctres(datain, key, maxcharperline=150):
     return dataout
 
 
-def parse_sacct(datain, key, sep, maxcharperline=150):
+def parse_sacct(datain, key, sep, default_charperline=150):
 
     nrow    = datain.count('\n')
     ncol    = len(key)
@@ -372,15 +434,14 @@ def parse_sacct(datain, key, sep, maxcharperline=150):
 
     if nrow == 0 :
         return dataout
-    else:
-        test = datain.find("\n", 0, maxcharperline)
-        while test == -1 :
-            maxcharperline += 100
-            test = datain.find("\n", 0, maxcharperline)
 
     start = 0
     for i in range(nrow):
-        end = datain.find("\n", start, start+maxcharperline)
+        charperline = default_charperline
+        end = datain.find("\n", start, start+charperline)
+        while end == -1 :
+            charperline += 100
+            end = datain.find("\n", start, start+charperline)
         temp = datain[start:end]
 
         markL = 0
@@ -679,8 +740,7 @@ if len(state_selected) != 0 or len(range_minmax) >= 1 :
     elif len(range_minmax) > 1 :
         print(' --range=' + str(range_minmax[0]) + '-' + str(range_minmax[1]), end='')
     print('')
-if len(slurm_filter_opts) != 0 or len(state_selected) != 0 or len(range_minmax) >= 1 :
-    print('')
+print('')
 
 # 3. Print total
 Format = '{:,.' + str(ServiceDecimal) + 'f}'
@@ -765,8 +825,9 @@ if is_show_job_histogram :
         hist_range = (0.0, max(usage[Service]))
 
     count, bin_edges = hist(usage[Service], bins=nbin_histogram, range=hist_range)
-    num_char = max( [len('{:,.4f}'.format(x)) for x in bin_edges] ) + 2
-    Format = '{:>'+str(num_char)+',.4f} - {:<'+str(num_char)+',.4f}'
+    try_format = '{:,.'+str(ServiceDecimal)+'f}'
+    num_char = max( [len(try_format.format(x)) for x in bin_edges] ) + 2
+    Format = '{:>'+str(num_char)+',.'+str(ServiceDecimal)+'f} - {:<'+str(num_char)+',.'+str(ServiceDecimal)+'f}'
     bin_names = [Format.format(x,y) for x,y in zip(bin_edges[:-1],bin_edges[1:])]
     count = list(count)
 

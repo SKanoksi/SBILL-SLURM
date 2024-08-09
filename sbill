@@ -1,10 +1,10 @@
 #!/usr/bin/python3
 #
-# SBILL version 1.4.2
+# SBILL version 1.4.4
 #
 # Query SLURM billing per job through SLURM sacct command
 #
-# Copyright (c) 2023, Somrath Kanoksirirath.
+# Copyright (c) 2024, Somrath Kanoksirirath.
 # All rights reserved under BSD 3-clause license.
 #
 # Dependencies:
@@ -12,13 +12,13 @@
 # + numpy  (>=1.11.0) -- Optional, only for --histogram option
 # + SLURM
 #
-__version__ = '1.4.2 (24 April 2023)'
+__version__ = '1.4.4 (09 August 2024)'
 __HPC__ = 'XXX HPC of XXX center'
 
 # Set up
 key = ['billing','cpu','gres/gpu:a100']  # Keywords to be captured from sacct
 isRestricted = True                      # True = display only jobs related by associated accounts
-SLURM_STARTDATE = '2023-04-06T00:00:00'
+SLURM_STARTDATE = '2024-08-09T00:00:00'
 
 Service = 'Service'
 calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100
@@ -61,8 +61,9 @@ def show_sbill_usage():
     print("  -h, --help")
     print("      show this help message and exit")
     print("")
-    print("  -H, --histogram=<number_of_bins>")
+    print("  -H, --histogram=<number_of_bins>[:field]")
     print("      compute histogram of the displayed jobs using the input number of bins")
+    print("      [Note: optional field can only be "+Service+", "+CPUusage+", or "+GPUusage+"]")
     print("")
     print("  -j, --jobs=<slurm_job>")
     print("      display only the specified job")
@@ -82,6 +83,9 @@ def show_sbill_usage():
     print("  -r, --partition=<slurm_partition_list>")
     print("      display only jobs that ran on these partitions")
     print("")
+    print("  --range=min[-max]")
+    print("      specify min and max of "+Service+" to filter jobs")
+    print("")    
     print("  --to_csv=<filename>")
     print("      save as .csv file")
     print("")
@@ -135,6 +139,7 @@ temp_opt = []
 state_selected = []
 is_show_job_histogram = False
 nbin_histogram = 1
+field_histogram = Service  # Only for int field that also displayed ***
 range_minmax = []
 is_show_total_SU = True
 sum_by = []
@@ -290,22 +295,29 @@ while i < len(argv) :
         exit(1)
     if len(temp_opt) > 1 :
         is_show_job_histogram = True
+        temp_opt = temp_opt[1].split(':')
+        if len(temp_opt) >= 2 :
+            field_histogram = temp_opt[1]
         try:
-            nbin_histogram = max(int(temp_opt[1]), 1)
+            nbin_histogram = max(int(temp_opt[0]), 1)
         except ValueError :
             print('Invalid input argument in -H, --histogram option :: cannot convert requested \"nbin\" to a proper numbers')
             exit(1)
     elif len(temp_opt) == 1 :
         is_show_job_histogram = True
         if temp_opt[0].startswith('-H') :
-            nbin_histogram = temp_opt[0][2:]
+            temp_opt = temp_opt[0][2:].split(':')
+            if len(temp_opt) >= 2 :
+                field_histogram = temp_opt[1]
         elif temp_opt[0].startswith('--histogram=') :
-            nbin_histogram = temp_opt[0][12:]
+            temp_opt = temp_opt[0][12:].split(':')
+            if len(temp_opt) >= 2 :
+                field_histogram = temp_opt[1]
         else:
             print('Invalid format of -H or --histogram option')
             exit(1)
         try:
-            nbin_histogram = max(int(nbin_histogram), 1)
+            nbin_histogram = max(int(temp_opt[0]), 1)
         except ValueError :
             print('Invalid input argument in -H, --histogram option :: cannot convert requested \"nbin\" to a proper numbers')
             exit(1)
@@ -644,7 +656,8 @@ for k in list(info.keys()):
 if len(info['JobID']) == len(usage['JobID']) :
     usage.update(info)
 else:
-    print("You encounter a bug in SBILL, please report this to somrathk@gmail.com")
+    print("If an error occurs, please check the fields used in '--format=' option.")
+    #print("You encounter a bug in SBILL, please report this to somrathk@gmail.com")
 
 
 # ---- Compute sum_by
@@ -817,17 +830,29 @@ if is_show_job_histogram :
     from numpy import histogram as hist
     from math import ceil
 
-    if len(range_minmax) >= 2 :
-        hist_range = (range_minmax[0], range_minmax[1])
-    elif len(range_minmax) == 1 :
-        hist_range = (range_minmax[0], max(usage[Service]))
+    if field_histogram == Service :
+        if len(range_minmax) >= 2 :
+            hist_range = (range_minmax[0], range_minmax[1])
+        elif len(range_minmax) == 1 :
+            hist_range = (range_minmax[0], max(usage[Service]))
+        else:
+            hist_range = (0.0, max(usage[Service]))
     else:
-        hist_range = (0.0, max(usage[Service]))
-
-    count, bin_edges = hist(usage[Service], bins=nbin_histogram, range=hist_range)
-    try_format = '{:,.'+str(ServiceDecimal)+'f}'
+        usage[field_histogram] = [ int(x) for x in usage[field_histogram] ]
+        hist_range = (0, max(usage[field_histogram]))
+    count, bin_edges = hist(usage[field_histogram], bins=nbin_histogram, range=hist_range)
+    
+    if field_histogram == Service :
+        Decimal = ServiceDecimal
+    elif field_histogram == CPUusage :
+        Decimal = CPUusageDecimal
+    elif field_histogram == GPUusage :
+        Decimal = GPUusageDecimal
+    else:
+        Decimal = 0 
+    try_format = '{:,.'+str(Decimal)+'f}'
     num_char = max( [len(try_format.format(x)) for x in bin_edges] ) + 2
-    Format = '{:>'+str(num_char)+',.'+str(ServiceDecimal)+'f} - {:<'+str(num_char)+',.'+str(ServiceDecimal)+'f}'
+    Format = '{:>'+str(num_char)+',.'+str(Decimal)+'f} - {:<'+str(num_char)+',.'+str(Decimal)+'f}'
     bin_names = [Format.format(x,y) for x,y in zip(bin_edges[:-1],bin_edges[1:])]
     count = list(count)
 
@@ -837,7 +862,7 @@ if is_show_job_histogram :
     bar = ['x' * int(ceil(n/step)) if n!=0 else ' ' for n in count]
 
     Format = '{:^' + str(2*num_char+3) + '}'
-    print(Format.format(Service+' range'), end='')
+    print(Format.format(field_histogram+' range'), end='')
     Format = '{:>' + str(len(str(max(count)))+2) + '}'
     print(Format.format('Count'), end='')
     print('   '+label, end='')

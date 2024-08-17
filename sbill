@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# SBILL version 1.4.4
+# SBILL version 1.4.5
 #
 # Query SLURM billing per job through SLURM sacct command
 #
@@ -11,16 +11,17 @@
 # + python (>=3.1.0)  -- subprocess, math, os, sys, str.format
 # + numpy  (>=1.11.0) -- Optional, only for --histogram option
 # + SLURM
-#
-__version__ = '1.4.4 (09 August 2024)'
+
+__version__ = '1.4.5 (16 August 2024)'
 __HPC__ = 'XXX HPC of XXX center'
 
 # Set up
-key = ['billing','cpu','gres/gpu:a100']  # Keywords to be captured from sacct
-isRestricted = True                      # True = display only jobs related by associated accounts
-SLURM_STARTDATE = '2024-08-09T00:00:00'
+Treskey = ['billing','cpu','gres/gpu:a100']  # Keywords to be captured from AllocTres in sacct
+isRestricted = True                          # True = display only jobs related by associated accounts
+AdminAccounts = ['admin']                   # Admin account to grant special permission even when isRestricted = True
+SLURM_STARTDATE = '2024-08-16T00:00:00'
 
-Service = 'Service'
+Service = 'SHr'
 calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100
 ServiceDecimal = 3
 
@@ -29,7 +30,7 @@ calCPUusage = lambda ncpu, elapsedraw : ncpu*elapsedraw/60/60
 CPUusageDecimal = 2
 
 GPUusage = 'GPU-card-hour'
-calGPUusage = lambda ngpu, elapsedraw : ngpu*elapsedraw/60/60 # *7433 = A100 cores per card
+calGPUusage = lambda ngpu, elapsedraw : ngpu*elapsedraw/60/60
 GPUusageDecimal = 2
 
 GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]
@@ -85,7 +86,7 @@ def show_sbill_usage():
     print("")
     print("  --range=min[-max]")
     print("      specify min and max of "+Service+" to filter jobs")
-    print("")    
+    print("")
     print("  --to_csv=<filename>")
     print("      save as .csv file")
     print("")
@@ -397,7 +398,7 @@ while i < len(argv) :
         exit(1)
 
 
-# ------  function to get data from SLURM ------
+# ------  Functions to get data from SLURM ------
 
 def get_tres(string, key):
     start = string.find(key)
@@ -468,6 +469,28 @@ def parse_sacct(datain, key, sep, default_charperline=150):
     return dataout
 
 
+def parse_sacctmgr(datain, default_charperline=150):
+
+    nrow    = datain.count('\n')
+    dataout = [None]*nrow
+
+    if nrow == 0 :
+        return dataout
+
+    start = 0
+    for i in range(nrow):
+        charperline = default_charperline
+        end = datain.find("\n", start, start+charperline)
+        while end == -1 :
+            charperline += 100
+            end = datain.find("\n", start, start+charperline)
+        dataout[i] = datain[start:end]
+
+        start = end + 1
+
+    return dataout
+
+
 def data_from_sacct(sacct_opts, columns, sep='|', isAllocTres=False):
     try:
         data = check_output(['sacct'] + sacct_opts, shell=False)
@@ -483,14 +506,14 @@ def data_from_sacct(sacct_opts, columns, sep='|', isAllocTres=False):
 
 def AssocAccount_from_sacctmgr():
     try:
-        data = check_output(['sacctmgr','show','assoc','-P','format=user,qos'], shell=False)
+        data = check_output(['sacctmgr','show','assoc','-n','-P','format=qos'], shell=False)
     except CalledProcessError :
         print('sbill: error: Non-zero return code from sacctmgr command.')
         exit(1)
     else:
-        data = parse_sacct(data.decode('utf-8'), key=['User','QOS'], sep='|') # Borrow
+        data = parse_sacctmgr(data.decode('utf-8'))
 
-    return data['QOS']
+    return data[1:]
 
 
 # ------------ Main computation  ------------
@@ -498,7 +521,7 @@ def AssocAccount_from_sacctmgr():
 # Parse AllocTres
 format_opts = ['--format=alloctres','-X','-p','--delimiter=,','--noheader']
 slurm_opts = format_opts + slurm_filter_opts + slurm_other_sacct_opts
-usage = data_from_sacct(slurm_opts, columns=key.copy(), sep=None, isAllocTres=True)
+usage = data_from_sacct(slurm_opts, columns=Treskey.copy(), sep=None, isAllocTres=True)
 
 # Get other essential fields
 format_opts = ['--format=jobid,account,state,elapsedraw','-X','-p','--noheader']
@@ -530,22 +553,38 @@ def filter_usage(Col, List):
     pop_usage(mask)
 
 
+def filter_acct(Col, List):
+    nrow = len(usage['JobID'])
+    mask = [False]*nrow
+    for nr in range(nrow):
+        if usage[Col][nr] in List :
+            mask[nr] = True
+    pop_usage(mask)
+
+
 # I. Account
 # Only show jobs submitted using associated accounts
+assoc = list(dict.fromkeys( AssocAccount_from_sacctmgr() )) # Remove duplicates
 if isRestricted :
-    assoc = list(dict.fromkeys( AssocAccount_from_sacctmgr() )) # Remove duplicates
-    filter_usage('Account', assoc)
+    for admin_acc in AdminAccounts :
+        if admin_acc in assoc :
+            isRestricted = False
+if isRestricted :
+    filter_acct('Account', assoc)
+
 
 # II. State
 if len(state_selected) != 0 :
     filter_usage('State', state_selected)
 
 
+# --- SBILL calculation
+
 # Compute Service and core-hour
 usage['ElapsedRaw'] = [ int(num) if num.isdigit() else 0 for num in usage['ElapsedRaw'] ]
-usage[Service]  = [ calService(b,s) for b,s in zip(usage[key[0]],usage['ElapsedRaw']) ]
-usage[CPUusage] = [ calCPUusage(ncpu,s) for ncpu,s in zip(usage[key[1]],usage['ElapsedRaw']) ]
-usage[GPUusage] = [ calGPUusage(ngpu,s) for ngpu,s in zip(usage[key[2]], usage['ElapsedRaw']) ]
+usage[Service]  = [ calService(b,s) for b,s in zip(usage[Treskey[0]],usage['ElapsedRaw']) ]
+usage[CPUusage] = [ calCPUusage(ncpu,s) for ncpu,s in zip(usage[Treskey[1]],usage['ElapsedRaw']) ]
+usage[GPUusage] = [ calGPUusage(ngpu,s) for ngpu,s in zip(usage[Treskey[2]], usage['ElapsedRaw']) ]
 
 # Filter range before sum
 if len(range_minmax) >= 1 :
@@ -568,7 +607,8 @@ Total_SU_spent = sum( usage[Service] )
 Total_CPUusage_obtained = sum( usage[CPUusage] )
 Total_GPUusage_obtained = sum( usage[GPUusage] )
 
-# ------------ Additional information ------------
+
+# ------------ Format of extra fields ------------
 
 # Get format options
 if len(slurm_format_opts) == 0 :
@@ -579,18 +619,21 @@ if len(slurm_format_opts) == 0 :
     else:
         slurm_format_opts = GLOBAL_SBILL_DEFAULT_FORMAT
 
-# Parse format options
-len_opt = [-1]*len(slurm_format_opts)
+# Parse format options == fields
+# --> separate field and len appeared in '--format=field1%len1,field2%len2'
+len_opt = [-1]*len(slurm_format_opts)        # -1 indicates default
 for i in range(len(slurm_format_opts)) :
     temp = slurm_format_opts[i].split('%')
     if len(temp) > 1 and temp[1] != '' :
         len_opt[i] = int(temp[1])
         slurm_format_opts[i] = temp[0]
 
-# Fields to be inquired
-sacct_format_opts = slurm_format_opts.copy()
-# Fields to be displayed
-display_format_opts = slurm_format_opts.copy()
+
+# --- Headers of fields only appears in SBILL are fixed
+# --- Headers of fields from SACCT are as specified in --format=
+
+sacct_format_opts = slurm_format_opts.copy()     # Fields to be inquired
+display_format_opts = slurm_format_opts.copy()   # Fields to be displayed
 
 lower_format_opts = [ n.lower() for n in slurm_format_opts ]
 j = 0
@@ -624,6 +667,7 @@ for i in range(len(lower_format_opts)):
         j += 1
 
 
+# Forcefully add required fields
 if not 'JobID' in sacct_format_opts :
     sacct_format_opts.append('JobID')
 if sum_by == 'User' and not 'User' in sacct_format_opts :
@@ -637,8 +681,8 @@ slurm_opts = format_opts + slurm_other_format_opts + slurm_filter_opts + slurm_o
 info = data_from_sacct(slurm_opts, columns=sacct_format_opts, sep='|')
 
 # Merge to usage
-usage["Billing"] = usage.pop(key[0])
-usage["NGPUS"]   = usage.pop(key[2])
+usage["Billing"] = usage.pop(Treskey[0])
+usage["NGPUS"]   = usage.pop(Treskey[2])
 
 jobid_list = info['JobID'].copy()
 last_index = len(usage['JobID']) -1
@@ -656,14 +700,14 @@ for k in list(info.keys()):
 if len(info['JobID']) == len(usage['JobID']) :
     usage.update(info)
 else:
-    print("If an error occurs, please check the fields used in '--format=' option.")
+    print("If an error occurs here, please check the fields used in '--format=' option.")
     #print("You encounter a bug in SBILL, please report this to somrathk@gmail.com")
 
 
 # ---- Compute sum_by
 
 if len(sum_by) != 0 :
-    tags = list(dict.fromkeys( usage[sum_by] ))
+    tags = list(dict.fromkeys( usage[sum_by] ))  # Remove duplicates
     sumby_results = {}
     for t in tags :
         sumby_results[t] = {}
@@ -738,7 +782,7 @@ if not is_show_only_summary :
         for i in range(len(display_format_opts)) :
             print(PrintFormat[i].format(usage[display_format_opts[i]][nr]), end='')
         print('')
-    print('---------- ---------- ---------- ')
+    print('---------- ---------- ----------')
 
 # 2. Print filter info
 print('')
@@ -841,7 +885,7 @@ if is_show_job_histogram :
         usage[field_histogram] = [ int(x) for x in usage[field_histogram] ]
         hist_range = (0, max(usage[field_histogram]))
     count, bin_edges = hist(usage[field_histogram], bins=nbin_histogram, range=hist_range)
-    
+
     if field_histogram == Service :
         Decimal = ServiceDecimal
     elif field_histogram == CPUusage :
@@ -849,7 +893,7 @@ if is_show_job_histogram :
     elif field_histogram == GPUusage :
         Decimal = GPUusageDecimal
     else:
-        Decimal = 0 
+        Decimal = 0
     try_format = '{:,.'+str(Decimal)+'f}'
     num_char = max( [len(try_format.format(x)) for x in bin_edges] ) + 2
     Format = '{:>'+str(num_char)+',.'+str(Decimal)+'f} - {:<'+str(num_char)+',.'+str(Decimal)+'f}'

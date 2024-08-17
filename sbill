@@ -21,7 +21,7 @@ isRestricted = True                          # True = display only jobs related 
 AdminAccounts = ['admin']                   # Admin account to grant special permission even when isRestricted = True
 SLURM_STARTDATE = '2024-08-16T00:00:00'
 
-Service = 'SHr'
+Service = 'Service'
 calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100
 ServiceDecimal = 3
 

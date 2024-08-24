@@ -6,9 +6,10 @@ Installation:
 --------------
 __HPC__ = 'XXX HPC of XXX center'             # Name of your system
 
-key = ['billing','cpu','gres/gpu:a100']       # Keywords to be captured from alloctres field of sacct => [billing, ncpus, ngpus] fields
-isRestricted = True                           # True = display only jobs related by associated accounts
-SLURM_STARTDATE = '2023-04-06T00:00:00'       # Reference start date shown in --help
+key = ['billing','cpu','gres/gpu:a100','mem']  # Keywords to be captured from alloctres field of sacct => [billing, ncpus, ngpus, allocmem] fields
+isRestricted = True                            # True = display only jobs related by associated accounts
+AdminAccounts = ['thaisc']                     # Admin account to grant special permission even when isRestricted = True
+SLURM_STARTDATE = '2023-04-06T00:00:00'        # Reference start date shown in --help
 
 Service = 'Service'                                                        # Billing unit of your system                  
 calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100     # How to calculate the billing
@@ -25,22 +26,26 @@ GPUusageDecimal = 2                                                        # Num
 GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]  # Default sbill format of your system
 --------------
 
-2. Copy sbill to a directory, such as /usr/local/bin 
+*** Important note ***
+It is recommended to hide the setup of your system.
+In this case, you could use cython to convert and compile sbill to an executable. 
+For example, using python3.10
+--> cython --embed -3 sbill
+--> cc -O3 $(python3-config --includes) sbill.c -o sbill.exe $(python3-config --ldflags) -lpython3.10
+
+
+2. Copy sbill or sbill.exe to a directory, such as /usr/local/bin 
 --> cp sbill /usr/local/bin
+--> cp sbill.exe /usr/local/sbill
 
 3. Change permission of the file, such as
 --> chomd 755 /usr/local/bin/sbill
+
 
 4. In ~/.bashrc, prepend the path of the directory to the PATH environment variable 
    (if not already done --> see echo $PATH)
 --> vi .bashrc
 --> export PATH=/usr/local/bin:${PATH} # (Last line of ~/.bashrc)
 
-5. Try 'sbill -h' or 'sbill -V'
 
-Note:
-To hide the setup of your system, you could use cython to convert and compile sbill to an executable. 
-For example, using python3.10, change Step 2 to
---> cython --embed -3 sbill
---> cc -O3 $(python3-config --includes) sbill.c -o sbill.exe $(python3-config --ldflags) -lpython3.10
---> cp sbill.exe /usr/local/sbill
+5. Try 'sbill -h' or 'sbill -V'

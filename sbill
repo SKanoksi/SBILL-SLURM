@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# SBILL version 1.4.6
+# SBILL version 1.4.7
 #
 # Query SLURM billing per job through SLURM sacct command
 #
@@ -12,14 +12,12 @@
 # + numpy  (>=1.11.0) -- Optional, only for --histogram option
 # + SLURM
 
-__version__ = '1.4.6 (24 August 2024)'
+__version__ = '1.4.7 (02 September 2024)'
 __HPC__ = 'XXX HPC of XXX center'
 
 # Set up
 Treskey = ['billing','cpu','gres/gpu:a100','mem']  # Keywords to be captured from AllocTres in sacct
-isRestricted = True                          # True = display only jobs related by associated accounts
-AdminAccounts = ['admin']                   # Admin account to grant special permission even when isRestricted = True
-SLURM_STARTDATE = '2024-08-24T00:00:00'
+SLURM_STARTDATE = '2024-09-02T00:00:00'
 
 Service = 'Service'
 calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100
@@ -35,10 +33,20 @@ GPUusageDecimal = 2
 
 GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]
 
+isRestricted = True            # True = display only jobs related by associated accounts
+AdminAccounts = ['admin']      # Admin account to grant special permission even when isRestricted = True
+# Note: 
+# - 'AdminAccounts' is meaningless when 'PrivateData' is enforced in slurm.conf
+# - SBILL restrict feature is provided as an additional guard on top of 'PrivateData', 
+#   since 'Service' is more sensitive information (also 'billing' is hidden in SACCT AllocTres).
+
+# ---- END OF COMPILE-TIME SETUP -----
+
+
 def show_sbill_usage():
     print("Usage: sbill [OPTIONS]")
     print("")
-    print("Query slurm billing per job (warpping slurm sacct command)")
+    print("Query slurm billing per job")
     print("")
     print("OPTIONS:")
     print("  -A, --accounts=<slurm_account_list>")
@@ -53,11 +61,12 @@ def show_sbill_usage():
     print("  -E, --endtime=<slurm_end_time>")
     print("      display only jobs that start running before this end time (Also see --truncate)")
     print("")
-    print("  -o, --format=<"+Service+", Billing, NGPUS, "+CPUusage+", "+GPUusage+", AllocMem and slurm_sacct_fields>")
-    print("      specify display fields, e.g., JobID, JobName, State%9, "+Service+", ...")
-    print("      The additional integer after % will specify the number of characters of the field")
-    print("      SBILL_FORMAT environment variable will override the default format.")
-    print("      Please note that "+CPUusage+" and "+GPUusage+" are of allocation.")
+    print("  -o, --format=<slurm/sbill_field_list>")
+    print("      specify fields to be displayed, e.g., 'JobID,JobName,State%9,SHr' (see --helpformat)")
+    print("      Note:")
+    print("      - Column width can be fixed by using '<field>%<width>'. The default is unlimited.")
+    print("      - Set 'SBILL_FORMAT' environment variable to override the default format.")
+    print("      - Please note that "+CPUusage+" and "+GPUusage+" are of allocation.")
     print("")
     print("  -h, --help")
     print("      show this help message and exit")
@@ -156,6 +165,7 @@ is_show_total_SU = True
 sum_by = []
 csv_outfile = ''
 is_show_only_summary = False
+has_account_filter = False
 
 def parse_filter_opts(i, opt1, opt2, has_argv, var=slurm_filter_opts):
     # Case 1: -X xxx
@@ -204,7 +214,9 @@ while i < len(argv) :
     except IndexError :
         print('Invalid input argument in -A, --accounts option :: List of accounts was NOT given.')
         exit(1)
-    if i != j : continue ;
+    if i != j :
+        has_account_filter = True
+        continue ;
 
     i = parse_filter_opts(i,'-a','--allusers', has_argv=False)
     if i != j : continue ;
@@ -410,7 +422,7 @@ while i < len(argv) :
         exit(0)
     if argv[i] == '--helpformat' :
         sacctformat = str(check_output(['sacct','--helpformat']).decode('ascii'))
-        print("--- Fields available from SACCT ---")
+        print("--- Fields available from SLURM ---")
         print(sacctformat)
         print("--- Additional fields available from SBILL ---")
         print("= "+Service+", Billing, NGPUS, "+CPUusage+", "+GPUusage+", AllocMem\n")
@@ -528,7 +540,7 @@ def data_from_sacct(sacct_opts, columns, sep='|', isAllocTres=False):
     try:
         data = check_output(['sacct'] + sacct_opts, shell=False)
     except CalledProcessError :
-        print('sbill: error: Non-zero return code from sacct command.')
+        print('sbill: error: Non-zero return code from SLRUM accounting service.')
         exit(1)
     else:
         if isAllocTres:
@@ -550,6 +562,21 @@ def AssocAccount_from_sacctmgr():
 
 
 # ------------ Main computation  ------------
+
+# Get associated accounts and check for Admin accounts
+assoc = list(dict.fromkeys( AssocAccount_from_sacctmgr() )) # Remove duplicates
+if isRestricted :
+    for admin_acc in AdminAccounts :
+        if admin_acc in assoc :
+            isRestricted = False
+# Only show jobs submitted using associated accounts (First guard) = Not enough
+# Strength: Fast, because query less
+# Weakness: Won't work when users specify non-associated accounts directly using -A
+#           (Tinkering user's input is troublesome)
+if isRestricted :
+    if not has_account_filter : 
+        slurm_extra_account_filter = '-A ' + ','.join(assoc)
+        slurm_other_sacct_opts.append(slurm_extra_account_filter)
 
 # Parse AllocTres
 format_opts = ['--format=alloctres','-X','-p','--delimiter=,','--noheader']
@@ -596,12 +623,9 @@ def filter_acct(Col, List):
 
 
 # I. Account
-# Only show jobs submitted using associated accounts
-assoc = list(dict.fromkeys( AssocAccount_from_sacctmgr() )) # Remove duplicates
-if isRestricted :
-    for admin_acc in AdminAccounts :
-        if admin_acc in assoc :
-            isRestricted = False
+# Only show jobs submitted using associated accounts (Second guard)
+# Strength: Correct, No loop hole
+# Weakness: Slow
 if isRestricted :
     filter_acct('Account', assoc)
 
@@ -824,7 +848,7 @@ if not is_show_only_summary :
 # 2. Print filter info
 print('')
 if len(slurm_filter_opts) != 0 :
-    print('With SACCT job filter options: ' + ' '.join(slurm_filter_opts))
+    print('With SLURM job filter options: ' + ' '.join(slurm_filter_opts))
 if len(state_selected) != 0 or len(range_minmax) >= 1 :
     print('With SBILL job filter options:', end='')
     if len(state_selected) != 0 :

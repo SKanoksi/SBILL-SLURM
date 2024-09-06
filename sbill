@@ -62,7 +62,7 @@ def show_sbill_usage():
     print("      display only jobs that start running before this end time (Also see --truncate)")
     print("")
     print("  -o, --format=<slurm/sbill_field_list>")
-    print("      specify fields to be displayed, e.g., 'JobID,JobName,State%9,SHr' (see --helpformat)")
+    print("      specify fields to be displayed, e.g., 'JobID,JobName,State%9,"+Service+"' (see --helpformat)")
     print("      Note:")
     print("      - Column width can be fixed by using '<field>%<width>'. The default is unlimited.")
     print("      - Set 'SBILL_FORMAT' environment variable to override the default format.")

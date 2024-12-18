@@ -112,3 +112,7 @@ OPTIONS:
   --> configured for XXX HPC of XXX center
 
 ```
+
+Known issue:
+- When using '--format=' option, if some letter cases are NOT EXACTLY as outputted by '--helpformat', then 'KeyError:' may be emitted in some circumstances, such as 'sbill -a --format=jobid,JobName'. In SBILL, 'JobID' acts as job reference tag, thus, may be the cause of this issue.  
+- When using '-state' instead of '--state', users will get 'No jobs to be displayed' instead of 'Unknown options/arguments'. This is because '--state' has a synonym '-s', but the current version does not include this in '--help'.

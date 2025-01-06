@@ -1,8 +1,8 @@
 # SBILL-SLURM
-Query SLURM billing per job via SLURM sacct command
+Query SLURM billing per job through SLURM sacct command
 
 SBILL version:
-1.4.7 (02 September 2024)
+1.5.0 (06 January 2025)
 
 Dependencies:
 + python (>=3.1.0)  -- subprocess, math, os, sys, str.format
@@ -10,7 +10,7 @@ Dependencies:
 + SLURM
 
 Note:
-1. When doing timely utilization reports, the --truncate option (from sacct) must be used for correctness.
+1. When doing timely net utilization reports, the -T, --trim, --trim-job or --truncate option (from sacct) must be used for correctness.
 2. AllocMem field does not follow the unit specified by --units. 
 
 | Example:|
@@ -112,7 +112,3 @@ OPTIONS:
   --> configured for XXX HPC of XXX center
 
 ```
-
-Known issue:
-- When using '--format=' option, if some letter cases are NOT EXACTLY as outputted by '--helpformat', then 'KeyError:' may be emitted in some circumstances, such as 'sbill -a --format=jobid,JobName'. In SBILL, 'JobID' acts as job reference tag, thus, may be the cause of this issue.  
-- When using '-state' instead of '--state', users will get 'No jobs to be displayed' instead of 'Unknown options/arguments'. This is because '--state' has a synonym '-s', but the current version does not include this in '--help'.

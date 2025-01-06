@@ -22,7 +22,7 @@ Note:
 ```txt
 Usage: sbill [OPTIONS]
 
-Query slurm billing per job
+Query job billing and information
 
 OPTIONS:
   -A, --accounts=<slurm_account_list>
@@ -51,23 +51,30 @@ OPTIONS:
       print the fields that can be specified with the --format option
 
   -H, --histogram=<number_of_bins>[:field]
-      compute histogram of the displayed jobs using the input number of bins
-      [Note: Optional field can only be Service, CPU-core-hour, or GPU-card-hour]
+      quickly compute histogram of the displayed jobs using the input number of bins
+      [Note: The supported fields are Service, CPU-core-hour, GPU-card-hour,
+                                      NNode, NCPU, NGPU, RunSec, RunMin, RunHour]
 
   -j, --jobs=<slurm_job>
       display only the specified job
 
+  -l, --long
+      equivalent to '--format=JobID,JobName%10,User,Account,Partition,NNodes,NCPUS,NGPUS,AllocRam,NodeList%24,Elapsed,State,Service'
+
   --name=<slurm_jobname_list>
       display only jobs that have these names
 
-  -i, --nnodes=<min[-max]>
-      display only jobs that ran with this specified number of nodes
+  -i, --nnodes=<num> or <min-max>
+      display only jobs that ran with the specified number of nodes
 
-  -I, --ncpus=<min-[max]>
-      display only jobs that ran with this specified number of CPUs
+  --ncpus=<num> or <min-max>
+      display only jobs that ran with the specified number of CPUs
+
+  --ngpus=<num> or <min-max>
+      display only jobs that ran with the specified number of GPUs
 
   --noconvert
-      do not convert units, e.g., 2048M won\'t get converted to 2G
+      do not convert units, e.g., 2048M won't get converted to 2G
 
   -N, --nodelist=<slurm_node_list>
       display only jobs that ran on these nodes
@@ -75,7 +82,7 @@ OPTIONS:
   -r, --partition=<slurm_partition_list>
       display only jobs that ran on these partitions
 
-  --range=min[-max]
+  --range=<min[-max]>
       specify min and max of Service to filter jobs
 
   --to_csv=<filename>
@@ -83,16 +90,20 @@ OPTIONS:
 
   -S, --starttime=<slurm_start_time>
       display only jobs that stop running after this start time (Also see --truncate)
-      Note: On this system, the billing start at 2024-09-02T00:00:00
+      Note: On this system, the billing start at 2025-01-06T00:00:00
 
   --state=<COMPLETED,FAILED,CANCELED,TIMEOUT,...>
       display only jobs marked with these state (no abbreviation)
 
-  --sumby=[Account,User]
-      sum the Service of the displayed jobs by [Account or User]
+  --sum-by=[Account,User], --sumby=[Account,User]
+      sum Service of the displayed jobs by [Account or User]
+  --sum-by-account, --sumbyaccount, --sum-byaccount, --sumby-account
+      equivalent to --sumby=Account
+  --sum-by-user, --sumbyuser, --sum-byuser, --sumby-user
+      equivalent to --sumby=User
 
-  -T, --truncate
-      Truncate start and end time of jobs, according to --starttime and --endtime
+  -T, --trim, --trim-jobtime, --truncate
+      Trim job runtime or truncate start and end time of jobs, according to --starttime and --endtime
       Note: When doing a timely utilization report, this option MUST be used for correctness.
 
   -u, --user=<slurm_user_list>
@@ -105,7 +116,7 @@ OPTIONS:
       print version and exit
 
   -X, --summary
-      display only the summary report
+      display only the summary report (implicitly infer --trim-jobtime)
 
   ---------
 

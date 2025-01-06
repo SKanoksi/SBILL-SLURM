@@ -6,9 +6,12 @@ Installation:
 --------------
 __HPC__ = 'XXX HPC of XXX center'             # Name of your system
 
-key = ['billing','cpu','gres/gpu:a100','mem']  # Keywords to be captured from alloctres field of sacct => [billing, ncpus, ngpus, allocmem] fields
+# 1) Treskey[0] = Slurm billing
+# 2) Treskey[1] = Num GPU
+# 3) Treskey[2] = Ram memory
+Treskey = ['billing','gres/gpu:a100','mem']    # Keywords to be captured from AllocTres in sacct
 isRestricted = True                            # True = display only jobs related by associated accounts
-AdminAccounts = ['thaisc']                     # Admin account to grant special permission even when isRestricted = True
+AdminAccounts = ['admin']                      # Admin account to grant special permission even when isRestricted = True
 SLURM_STARTDATE = '2023-04-06T00:00:00'        # Reference start date shown in --help
 
 Service = 'Service'                                                        # Billing unit of your system                  
@@ -23,7 +26,8 @@ GPUusage = 'GPU-card-hour'                                                 # GPU
 calGPUusage = lambda ngpu, elapsedraw : ngpu*elapsedraw/60/60              # How to calculated the GPU usage
 GPUusageDecimal = 2                                                        # Number of decimal to be displayed.
 
-GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]  # Default sbill format of your system
+GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]
+GLOBAL_SBILL_LONG_FORMAT    = ['JobID','JobName%10','User','Account','Partition','NNodes','NCPUS','NGPUS','AllocRam','NodeList%24','Elapsed','State',Service]
 --------------
 
 *** Important note ***

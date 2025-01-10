@@ -1,33 +1,41 @@
 Installation:
 = sbill is a single python script, internally invokes SLURM commands
 
-1. Edit the header of sbill for your system, that is,
+1. Edit the header of sbill to match your cluster billing system
 
 --------------
-__HPC__ = 'XXX HPC of XXX center'             # Name of your system
+__version__ = '1.5.0-RC3 (10-Jan-2025)'
+__HPC__ = 'XXX HPC of XXX center'
 
+# Set up
+# Requirement:
 # 1) Treskey[0] = Slurm billing
 # 2) Treskey[1] = Num GPU
 # 3) Treskey[2] = Ram memory
-Treskey = ['billing','gres/gpu:a100','mem']    # Keywords to be captured from AllocTres in sacct
-isRestricted = True                            # True = display only jobs related by associated accounts
-AdminAccounts = ['admin']                      # Admin account to grant special permission even when isRestricted = True
-SLURM_STARTDATE = '2023-04-06T00:00:00'        # Reference start date shown in --help
+Treskey = ['billing','gres/gpu','mem']  # Keywords to be captured from AllocTres in sacct
+SLURM_STARTDATE = '2025-01-10T00:00:00'
 
-Service = 'Service'                                                        # Billing unit of your system                  
-calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100     # How to calculate the billing
-ServiceDecimal = 3                                                         # Number of decimal to be displayed.
+Service    = 'Service'
+calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100
+ServiceDecimal = 3
 
-CPUusage = 'CPU-core-hour'                                                 # CPU-usage unit to be shown
-calCPUusage = lambda ncpu, elapsedraw : ncpu*elapsedraw/60/60              # How to calculate the CPU usage 
-CPUusageDecimal = 2                                                        # Number of decimal to be displayed.
+CPUusage    = 'CPU-core-hour'
+calCPUusage = lambda ncpu, elapsedraw : ncpu*elapsedraw/60/60
+CPUusageDecimal = 2
 
-GPUusage = 'GPU-card-hour'                                                 # GPU-usage unit to be shown
-calGPUusage = lambda ngpu, elapsedraw : ngpu*elapsedraw/60/60              # How to calculated the GPU usage
-GPUusageDecimal = 2                                                        # Number of decimal to be displayed.
+GPUusage    = 'GPU-card-hour'
+calGPUusage = lambda ngpu, elapsedraw : ngpu*elapsedraw/60/60
+GPUusageDecimal = 2
+
+BillingUnit    = 'ServicePerHour'
+calBillingUnit = lambda billing : billing/100
+BillingUnitDecimal = 3
 
 GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]
-GLOBAL_SBILL_LONG_FORMAT    = ['JobID','JobName%10','User','Account','Partition','NNodes','NCPUS','NGPUS','AllocRam','NodeList%24','Elapsed','State',Service]
+GLOBAL_SBILL_LONG_FORMAT    = ['JobID','JobName%10','User','Account','Partition','NNodes','NCPUS','NGPUS','AllocRAM','NodeList%24','Elapsed','State',BillingUnit,Service]
+
+isRestricted  = True          # True = display only jobs related by associated accounts
+AdminAccounts = ['admin']     # Admin account to grant special permission even when isRestricted = True
 --------------
 
 *** Important note ***
@@ -42,12 +50,14 @@ For example, using python3.10
 --> cp sbill /usr/local/bin
 --> cp sbill.exe /usr/local/sbill
 
+
 3. Change permission of the file, such as
 --> chomd 755 /usr/local/bin/sbill
+--> chomd 751 /usr/local/bin/sbill
 
 
 4. In ~/.bashrc, prepend the path of the directory to the PATH environment variable 
-   (if not already done --> see echo $PATH)
+   (if not already present in it --> try echo $PATH)
 --> vi .bashrc
 --> export PATH=/usr/local/bin:${PATH} # (Last line of ~/.bashrc)
 

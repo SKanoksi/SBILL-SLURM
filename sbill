@@ -1,162 +1,158 @@
 #!/usr/bin/python3
 #
-# SBILL version 1.5.0
+# SBILL version 1.5.0-RC3
 #
-# Query SLURM job billing and information through SLURM sacct command
+# Query SLURM billing per job through SLURM sacct command
 #
-# Copyright (c) 2024, Somrath Kanoksirirath.
+# Copyright (c) 2025, Somrath Kanoksirirath.
 # All rights reserved under BSD 3-clause license.
 #
 # Dependencies:
 # + python (>=3.1.0)  -- subprocess, math, os, sys, str.format
 # + numpy  (>=1.11.0) -- Optional, only for --histogram option
 # + SLURM
+# --------------------------------------
 
-__version__ = '1.5.0 (06-Jan-2025)'
+# ---- START OF COMPILE-TIME SETUP -----
+
+__version__ = '1.5.0-RC3 (10-Jan-2025)'
 __HPC__ = 'XXX HPC of XXX center'
 
 # Set up
-# Requirement: 
+# Requirement:
 # 1) Treskey[0] = Slurm billing
 # 2) Treskey[1] = Num GPU
 # 3) Treskey[2] = Ram memory
-Treskey = ['billing','gres/gpu:a100','mem']  # Keywords to be captured from AllocTres in sacct
-SLURM_STARTDATE = '2025-01-06T00:00:00'
+Treskey = ['billing','gres/gpu','mem']  # Keywords to be captured from AllocTres in sacct
+SLURM_STARTDATE = '2025-01-10T00:00:00'
 
-Service = 'Service'
+Service    = 'Service'
 calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100
 ServiceDecimal = 3
 
-CPUusage = 'CPU-core-hour'
+CPUusage    = 'CPU-core-hour'
 calCPUusage = lambda ncpu, elapsedraw : ncpu*elapsedraw/60/60
 CPUusageDecimal = 2
 
-GPUusage = 'GPU-card-hour'
+GPUusage    = 'GPU-card-hour'
 calGPUusage = lambda ngpu, elapsedraw : ngpu*elapsedraw/60/60
 GPUusageDecimal = 2
 
-GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]
-GLOBAL_SBILL_LONG_FORMAT    = ['JobID','JobName%10','User','Account','Partition','NNodes','NCPUS','NGPUS','AllocRam','NodeList%24','Elapsed','State',Service]
+BillingUnit    = 'ServicePerHour'
+calBillingUnit = lambda billing : billing/100
+BillingUnitDecimal = 3
 
-isRestricted = True            # True = display only jobs related by associated accounts
-AdminAccounts = ['admin']      # Admin account to grant special permission even when isRestricted = True
-# Note: 
+GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]
+GLOBAL_SBILL_LONG_FORMAT    = ['JobID','JobName%10','User','Account','Partition','NNodes','NCPUS','NGPUS','AllocRAM','NodeList%24','Elapsed','State',BillingUnit,Service]
+
+isRestricted  = True          # True = display only jobs related by associated accounts
+AdminAccounts = ['admin']     # Admin account to grant special permission even when isRestricted = True
+# Note:
 # - 'AdminAccounts' is meaningless when 'PrivateData' is enforced in slurm.conf
-# - SBILL restrict feature is provided as an additional guard on top of 'PrivateData', 
-#   since 'Service' is more sensitive information (also 'billing' is hidden in SACCT AllocTres).
+# - SBILL restrict feature is provided as an additional guard on top of 'PrivateData',
+#   since 'Service' is more sensitive information <--> 'billing' is hidden in SACCT AllocTres
+
+sacct_all_format_opts = ['AdminComment', 'AllocCPUS', 'AllocNodes', 'AllocTRES', 'AssocID',
+        'AveCPU', 'AveCPUFreq', 'AveDiskRead', 'AveDiskWrite', 'AvePages', 'AveRSS', 'AveVMSize',
+        'BlockID', 'Cluster', 'Comment', 'Constraints', 'ConsumedEnergy', 'ConsumedEnergyRaw', 'Container', 'CPUTime', 'CPUTimeRAW',
+        'DBIndex', 'DerivedExitCode', 'Elapsed', 'Eligible', 'End', 'ExitCode', 'Flags', 'GID', 'Group',
+        'JobID', 'JobIDRaw', 'JobName', 'Layout', 'MaxDiskRead', 'MaxDiskReadNode', 'MaxDiskReadTask',
+        'MaxDiskWrite', 'MaxDiskWriteNode', 'MaxDiskWriteTask', 'MaxPages', 'MaxPagesNode', 'MaxPagesTask',
+        'MaxRSS', 'MaxRSSNode', 'MaxRSSTask', 'MaxVMSize', 'MaxVMSizeNode', 'MaxVMSizeTask', 'McsLabel', 'MinCPU', 'MinCPUNode', 'MinCPUTask',
+        'NNodes', 'NodeList', 'NTasks', 'Partition', 'Priority', 'QOS', 'QOSRAW', 'Reason',
+        'ReqCPUFreq', 'ReqCPUFreqGov', 'ReqCPUFreqMax', 'ReqCPUFreqMin', 'ReqCPUS', 'ReqMem', 'ReqNodes', 'ReqTRES',
+        'Reservation', 'ReservationId', 'Reserved', 'ResvCPU', 'ResvCPURAW',
+        'Start', 'Submit', 'SubmitLine', 'Suspended', 'SystemComment', 'SystemCPU', 'Timelimit', 'TimelimitRaw', 'TotalCPU',
+        'TRESUsageInAve', 'TRESUsageInMax', 'TRESUsageInMaxNode', 'TRESUsageInMaxTask',
+        'TRESUsageInMin', 'TRESUsageInMinNode', 'TRESUsageInMinTask', 'TRESUsageInTot',
+        'TRESUsageOutAve', 'TRESUsageOutMax', 'TRESUsageOutMaxNode', 'TRESUsageOutMaxTask',
+        'TRESUsageOutMin', 'TRESUsageOutMinNode', 'TRESUsageOutMinTask', 'TRESUsageOutTot',
+        'UID', 'User', 'UserCPU', 'WCKey', 'WCKeyID', 'WorkDir']
+         # Excluding --> 'Account', 'State', 'NCPUS', 'ElapsedRaw'
 
 # ---- END OF COMPILE-TIME SETUP -----
 
 
 def show_sbill_usage():
-    print("Usage: sbill [OPTIONS]")
+    print("Usage: sbill [OPTIONS(0)...]")
     print("")
     print("Query job billing and information")
     print("")
-    print("OPTIONS:")
-    print("  -A, --accounts=<slurm_account_list>")
-    print("      specify one or more accounts")
+    print("JOB FILTER/QUERY OPTIONS:")
+    print("  -j, --jobs=<jobid,...>            jobs in the specified list")
+    print("      --name=<jobname,...>          jobs that have these name(s)")
     print("")
-    print("  -a, --allusers")
-    print("      display jobs of all users")
+    print("  -A, --accounts=<account,...>      jobs charged to these account(s)")
+    print("                                      Default: all of yours")
+    print("  -a, --allusers                    jobs submitted by any users")
+    print("  -u, --user=<username,...>         jobs submitted by these user(s)")
+    print("                                      Default: only you")
     print("")
-    print("  -L, --allclusters")
-    print("      display jobs ran on all clusters")
+    print("  -L, --allclusters                 jobs on any clusters")
+    print("  -p, --partition=<partition,...>   jobs on these partition(s)")
+    print("  -w, --nodelist=<nodename,...>     jobs on these node(s)")
     print("")
-    print("  -E, --endtime=<slurm_end_time>")
-    print("      display only jobs that start running before this end time (Also see --truncate)")
+    print("  -N, --nnodes=<num> or <min-max>   jobs that use the specified number of nodes")
+    print("  -C, --ncpus=<num> or <min-max>    jobs that use the specified number of CPUs")
+    print("  -G, --ngpus=<num> or <min-max>    jobs that use the specified number of GPUs")
     print("")
-    print("  -o, --format=<slurm/sbill_field_list>")
-    print("      specify fields to be displayed, e.g., 'JobID,JobName,State%9,"+Service+"' (see --helpformat)")
-    print("      Note:")
-    print("      - Column width can be fixed by using '<field>%<width>'. The default is unlimited.")
-    print("      - Set 'SBILL_FORMAT' environment variable to override the default format.")
-    print("      - Please note that "+CPUusage+" and "+GPUusage+" are of allocation.")
+    print("      --state=<job_state,...>       jobs that are marked with these state(s)")
+    print("      --runtime=<min[-max:unit]>    jobs that have runtime within the range,")
+    print("                                    where unit is \'sec\', \'min\', or \'hr\'")
+    print("      --range=<min[-max]>           jobs charged within the specified "+Service+" range")
     print("")
-    print("  -h, --help")
-    print("      show this help message and exit")
+    print("  -E, --endtime=<time>              jobs that start before this time point")
+    print("  -S, --starttime=<time>            jobs that end after this time point")
+    print("                                      Default: Today at 00:00:00")
+    print("  -T, --trim, --truncate (slurm)    trim job runtime by trunicating start/end time")
+    print("                                    according to -S, -E options")
+    print("  Note: time format is...                      ")
+    print("             YYYY-MM-DD[THH:MM[:SS]] or              ")
+    print("             MM/DD[/YY]-HH:MM[:SS] or                ")
+    print("             MMDD[YY] or MM/DD[/YY] or MM.DD[.YY] or ")
+    print("             now[{+|-}count[seconds(default)|minutes|hours|days|weeks]]")
+    print("  Warning: -T MUST be used for correctness when doing a net utilization report")
     print("")
-    print("  --helpformat")
-    print("      print the fields that can be specified with the --format option")
+    print("JOB DISPLAY/OUTPUT OPTIONS:")
+    print("  -l, --long                        display the jobs in SBILL long format")    
+    print("  -o, --format=<field,...>          list of fields to be displayed where... ")
+    print("                                     = Column width can be fixed by using")
+    print("                                       <field>%<width>")
+    print("                                     = User's default format can be set by")
+    print("                                       export SBILL_FORMAT=xxx")
+    print("                                     = The \'Default\' field is an alias")
+    print("                                       of SBILL default field list, try")
+    print("                                       -o default,start,end")
+    print("      --helpformat                  display all available fields, then exit")
     print("")
-    print("  -H, --histogram=<number_of_bins>[:field]")
-    print("      quickly compute histogram of the displayed jobs using the input number of bins")
-    print("      [Note: The supported fields are "+Service+", "+CPUusage+", "+GPUusage+",")
-    print("                                      NNode, NCPU, NGPU, RunSec, RunMin, RunHour]")
+    print("  -H, --histogram=<nbin>[:field]    display text-based histogram of the jobs")
+    print("                                    where field is "+Service+", "+BillingUnit+",")
+    print("                                                   NNode, NCPU, NGPU,")
+    print("                                                   "+CPUusage+", "+GPUusage+",")
+    print("                                                   RunSec, RunMin or RunHour")
     print("")
-    print("  -j, --jobs=<slurm_job>")
-    print("      display only the specified job")
+    print("  -X, --summary                     display only the summary report")
+    print("      --sum-by-account              display sum(s) of the filtered jobs by account")
+    print("      --sum-by-user                 display sum(s) of the filtered jobs by user")
+    print("      --sumby[xxx]                  various aliases of --sum-by-xxx")
     print("")
-    print("  -l, --long")
-    print("      equivalent to \'--format="+','.join(GLOBAL_SBILL_LONG_FORMAT)+"\'")
+    print("      --noconvert                   display without converting unit (KMGTP)")
+    print("      --units=[KMGTP]               display values in the specified unit type")
+    print("                                    (override --noconvert)")
     print("")
-    print("  --name=<slurm_jobname_list>")
-    print("      display only jobs that have these names")
+    print("      --to_csv=<filename>           save job records in CSV format to <filename>")
+    print("      --csv_sep=<character>         separator/delimiter for --to_csv option")
     print("")
-    print("  -i, --nnodes=<num> or <min-max>")
-    print("      display only jobs that ran with the specified number of nodes")
-    print("")
-    print("  --ncpus=<num> or <min-max>")
-    print("      display only jobs that ran with the specified number of CPUs")
-    print("")
-    print("  --ngpus=<num> or <min-max>")
-    print("      display only jobs that ran with the specified number of GPUs")
-    print("")
-    print("  --noconvert")
-    print("      do not convert units, e.g., 2048M won't get converted to 2G")
-    print("")
-    print("  -N, --nodelist=<slurm_node_list>")
-    print("      display only jobs that ran on these nodes")
-    print("")
-    print("  -r, --partition=<slurm_partition_list>")
-    print("      display only jobs that ran on these partitions")
-    print("")
-    print("  --range=<min[-max]>")
-    print("      specify min and max of "+Service+" to filter jobs")
-    print("")    
-    print("  --to_csv=<filename>")
-    print("      save as .csv file")
-    print("")
-    print("  -S, --starttime=<slurm_start_time>")
-    print("      display only jobs that stop running after this start time (Also see --truncate)")
-    print("      Note: On this system, the billing start at", SLURM_STARTDATE)
-    print("")
-    print("  --state=<COMPLETED,FAILED,CANCELED,TIMEOUT,...>")
-    print("      display only jobs marked with these state (no abbreviation)")
-    print("")
-    print("  --sum-by=[Account,User], --sumby=[Account,User]")
-    print("      sum "+Service+" of the displayed jobs by [Account or User]")
-    print("  --sum-by-account, --sumbyaccount, --sum-byaccount, --sumby-account")
-    print("      equivalent to --sumby=Account")
-    print("  --sum-by-user, --sumbyuser, --sum-byuser, --sumby-user")
-    print("      equivalent to --sumby=User")
-    print("")
-    print("  -T, --trim, --trim-jobtime, --truncate")
-    print("      Trim job runtime or truncate start and end time of jobs, according to --starttime and --endtime")
-    print("      Note: When doing a timely utilization report, this option MUST be used for correctness.")
-    print("")
-    print("  -u, --user=<slurm_user_list>")
-    print("      display only jobs submitted by these users")
-    print("")
-    print("  --units=[KMGTP]")
-    print("      display values in the specified unit type (Override --noconvert)")
-    print("")
-    print("  -V, --version")
-    print("      print version and exit")
-    print("")
-    print("  -X, --summary")
-    print("      display only the summary report (implicitly infer --trim-jobtime)")
-    print("")
-    print("  ---------")
-    print("")
-    print("  --> configured for " + __HPC__)
+    print("OTHERS:")
+    print("  -h, --help                        print this help message, then exit")
+    print("  -V, --version                     print SBILL version and few details, then exit")
     print("")
     # Hidden option
-    #print("  --other_sacct_opts=(SLURM SACCT OPTIONS)")
-    #print("      append other slurm sacct options, please use with caution")
+    #print("  --other_sacct_opts=(SLURM SACCT OPTIONS)     append other slurm sacct options, please use with caution")
     #print("")
     #
-    # --allusers may conflict with --user= --> latest take effect --> let sacct fix it
+    # --long conflicts with --format --> latest take effect 
+    # --allusers conflicts with --user= --> latest take effect
 
 
 # ----- import libraries 1 -----
@@ -175,15 +171,22 @@ temp_opt = []
 state_selected = []
 is_show_job_histogram = False
 nbin_histogram = 1
-field_histogram = Service  # Only for int field that also displayed ***
+field_histogram = Service
 range_minmax = []
+runtime_minmax = []
+runtime_to_sec = 3600
 range_ncpu_minmax = []
 range_ngpu_minmax = []
 is_show_total_SU = True
 sum_by = []
 csv_outfile = ''
+csv_delimiter = ","
+slurm_mem_unit = None
 is_show_only_summary = False
 has_account_filter = False
+trim_jobtime = False
+has_starttime_filter = False
+has_endtime_filter = False
 
 def parse_filter_opts(i, opt1, opt2, has_argv, var=slurm_filter_opts):
     # Case 1: -X xxx
@@ -248,7 +251,9 @@ while i < len(argv) :
     except IndexError :
         print('Invalid input argument in -E, --endtime option :: Endtime was NOT specified.')
         exit(1)
-    if i != j : continue ;
+    if i != j :
+        has_endtime_filter = True
+        continue
 
     try:
         i = parse_filter_opts(i,'-j','--jobs', has_argv=True)
@@ -265,13 +270,18 @@ while i < len(argv) :
     if i != j : continue ;
 
     try:
-        i = parse_filter_opts(i,'-i','--nnodes', has_argv=True)
+        i = parse_filter_opts(i,'-N','--nnodes', has_argv=True)
     except IndexError :
-        print('Invalid input argument in -i, --nnodes option :: The number of nodes was NOT given.')
+        print('Invalid input argument in -N, --nnodes option :: The number of nodes was NOT given.')
         exit(1)
-    if i != j : continue ;
+    if i != j : 
+        if slurm_filter_opts[-2] == '-N' :
+            slurm_filter_opts[-2] = '--nnodes'
+        elif slurm_filter_opts[-1].startswith('-N') :
+            slurm_filter_opts[-1] = '--nnodes=' + slurm_filter_opts[-1][2:]
+        continue
 
-    # *** There seem to be a bug in this SACCT option, when the job contains GPUs *** 
+    # *** There seem to be a bug in this SACCT option, when the job contains GPUs ***
     #     --> Implement this ourself
     #try:
     #    i = parse_filter_opts(i,'-I','--ncpus', has_argv=True)
@@ -281,25 +291,38 @@ while i < len(argv) :
     #if i != j : continue ;
 
     try:
-        i = parse_filter_opts(i,'-N','--nodelist', has_argv=True)
+        i = parse_filter_opts(i,'-w','--nodelist', has_argv=True)
     except IndexError :
-        print('Invalid input argument in -N, --nodelist option :: List of nodes was NOT given.')
+        print('Invalid input argument in -w, --nodelist option :: List of nodes was NOT given.')
         exit(1)
-    if i != j : continue ;
+    if i != j : 
+        if slurm_filter_opts[-2] == '-w' :
+            slurm_filter_opts[-2] = '--nodelist'
+        elif slurm_filter_opts[-1].startswith('-w') :
+            slurm_filter_opts[-1] = '--nodelist=' + slurm_filter_opts[-1][2:]
+        continue
+
 
     try:
-        i = parse_filter_opts(i,'-r','--partition', has_argv=True)
+        i = parse_filter_opts(i,'-p','--partition', has_argv=True)
     except IndexError :
-        print('Invalid input argument in -r, --partition option :: List of partition names was NOT given.')
+        print('Invalid input argument in -p, --partition option :: List of partition names was NOT given.')
         exit(1)
-    if i != j : continue ;
+    if i != j :
+        if slurm_filter_opts[-2] == '-p' :
+            slurm_filter_opts[-2] = '--partition'
+        elif slurm_filter_opts[-1].startswith('-p') : 
+            slurm_filter_opts[-1] = '--partition=' + slurm_filter_opts[-1][2:]
+        continue
 
     try:
         i = parse_filter_opts(i,'-S','--starttime', has_argv=True)
     except IndexError :
         print('Invalid input argument in -S, --starttime option :: Starttime was NOT specified.')
         exit(1)
-    if i != j : continue ;
+    if i != j :
+        has_starttime_filter = True
+        continue
 
     try:
         i = parse_filter_opts(i,'-u','--user', has_argv=True)
@@ -311,7 +334,7 @@ while i < len(argv) :
 
     # *** Format option ***
     try:
-        i = parse_filter_opts(i,'-o','--format', has_argv=True, var=temp_opt) 
+        i = parse_filter_opts(i,'-o','--format', has_argv=True, var=temp_opt)
     except IndexError :
         print('Invalid input argument in -o, --format option :: Format was not specified.')
         exit(1)
@@ -334,7 +357,7 @@ while i < len(argv) :
     try:
         i = parse_filter_opts(i,'--state','--state', has_argv=True, var=temp_opt) # Borrow
     except IndexError :
-        print('Invalid input argument in -s, --state option :: List of states was NOT given.')
+        print('Invalid input argument in --state option :: List of states was NOT given.')
         exit(1)
     if len(temp_opt) > 1 :
         state_selected = temp_opt[1].split(',')
@@ -342,102 +365,165 @@ while i < len(argv) :
         if temp_opt[0].startswith('--state=') :
             state_selected = temp_opt[0][8:].split(',')
         else:
-            print('Invalid input argument in -s, --state option :: Ambiguous inputs, please explicitly use --state=<STATE_LIST>.')
+            print('Invalid input argument in --state option :: Ambiguous inputs, please explicitly use --state=<STATE_LIST>.')
             exit(1)
     if i != j : temp_opt = [] ; continue ;
 
-    if argv[i].startswith('--range='):
-        try:
-            temp = argv[i][8:].split('-')
-            if len(temp) == 1 :
-                range_minmax = [float(temp[0])]
-            elif len(temp) > 1 :
-                range_minmax = [float(temp[0]), float(temp[1])]
-            else:
-                print('Invalid format of --range option')
-                exit(1)
-        except ValueError :
-            print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i][8:]+'\" to proper numbers, i.e., min and max')
-            exit(1)
-        i += 1
-        continue
     if argv[i].startswith('--range'):
-        try:
+        if argv[i] == '--range' :
             temp = argv[i+1].split('-')
+        elif argv[i][7] == '=' :
+            temp = argv[i][8:].split('-')
+        else:
+            print('Unknown options/arguments :: \''+argv[i]+'\'\nSee \'sbill --help\'')
+            exit(1)
+        try:
             if len(temp) == 1 :
                 range_minmax = [float(temp[0])]
             elif len(temp) > 1 :
                 range_minmax = [float(temp[0]), float(temp[1])]
             else:
-                print('Invalid format of --range option')
+                print('Invalid format of --range option, should be either <min> or <min>-<max>')
                 exit(1)
         except ValueError :
-            print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i+1]+'\" to proper numbers, i.e., min and max')
+            if argv[i] == '--range' :
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i+1]+'\" to proper numbers, i.e., min and max')
+            elif argv[i][7] == '=' :
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i][8:]+'\" to proper numbers, i.e., min and max')
             exit(1)
-        i += 2
+        i += 2 if argv[i] == '--range' else 1
         continue
 
-    if argv[i].startswith('--ncpus='):
+    if argv[i].startswith('--runtime'):
+        # range
+        if argv[i] == '--runtime' :
+            temp = argv[i+1].split(':')
+        elif argv[i][9] == '=' :
+            temp = argv[i][10:].split(':')
+        else:
+            print('Unknown options/arguments :: \''+argv[i]+'\'\nSee \'sbill --help\'')
+            exit(1)
         try:
-            temp = argv[i][8:].split('-')
+            temp = temp[0].split('-')
             if len(temp) == 1 :
-                range_ncpu_minmax = [int(temp[0]), int(temp[0])]
+                runtime_minmax = [int(temp[0])]
             elif len(temp) > 1 :
-                range_ncpu_minmax = [int(temp[0]), int(temp[1])]
+                runtime_minmax = [int(temp[0]), int(temp[1])]
             else:
-                print('Invalid format of --ncpus option')
+                print('Invalid format of --runtime option, should be either <min> or <min>-<max>, prior to :<unit>')
                 exit(1)
         except ValueError :
-            print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i][8:]+'\" to valid number(s)')
+            if argv[i] == '--runtime' :
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i+1]+'\" to proper numbers, i.e., min and max')
+            elif argv[i][9] == '=' :
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i][10:]+'\" to proper numbers, i.e., min and max')
             exit(1)
-        i += 1
+        # unit
+        if argv[i] == '--runtime' :
+            temp = argv[i+1].split(':')
+        elif argv[i][9] == '=' :
+            temp = argv[i][10:].split(':')
+        if len(temp) > 1 :
+            temp = temp[1].lower()
+            if temp == 'sec' or temp == 'second' or temp == 'seconds' :
+                runtime_to_sec = 1
+            elif temp == 'min' or temp == 'minute' or temp == 'minutes' :
+                runtime_to_sec = 60
+            elif temp != 'hr' and temp != 'hour' and temp != 'hours' :
+                print('sbill: warning: Invalid temporal unit for --runtime option. Back to the default \'hour\'.')
+        i += 2 if argv[i] == '--runtime' else 1
         continue
+
     if argv[i].startswith('--ncpus'):
-        try:
+        if argv[i] == '--ncpus' :
             temp = argv[i+1].split('-')
+        elif argv[i][7] == '=' :
+            temp = argv[i][8:].split('-')
+        else:
+            print('Unknown options/arguments :: \''+argv[i]+'\'\nSee \'sbill --help\'')
+        try:
             if len(temp) == 1 :
                 range_ncpu_minmax = [int(temp[0]), int(temp[0])]
             elif len(temp) > 1 :
                 range_ncpu_minmax = [int(temp[0]), int(temp[1])]
             else:
-                print('Invalid format of --ncpus option')
+                print('Invalid format of --ncpus option, should be either <num> or <min>-<max>')
                 exit(1)
         except ValueError :
-            print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i+1]+'\" to valid number(s)')
+            if argv[i] == '--ncpus' :
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i+1]+'\" to valid number(s)')
+            elif argv[i][7] == '=' :
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i][8:]+'\" to valid number(s)')
             exit(1)
-        i += 2
+        i += 2 if argv[i] == '--ncpus' else 1
+        continue
+    if argv[i].startswith('-C'):
+        if argv[i] == '-C' :
+            temp = argv[i+1].split('-')
+        else:
+            temp = argv[i][2:].split('-')
+        try:
+            if len(temp) == 1 :
+                range_ncpu_minmax = [int(temp[0]), int(temp[0])]
+            elif len(temp) > 1 :
+                range_ncpu_minmax = [int(temp[0]), int(temp[1])]
+            else:
+                print('Invalid format of -C option, should be either <num> or <min>-<max>')
+                exit(1)
+        except ValueError :
+            if argv[i] == '-C' :
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i+1]+'\" to valid number(s)')
+            else:
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i][2:]+'\" to valid number(s)')
+            exit(1)
+        i += 2 if argv[i] == '-C' else 1
         continue
 
-    if argv[i].startswith('--ngpus='):
-        try:
-            temp = argv[i][8:].split('-')
-            if len(temp) == 1 :
-                range_ngpu_minmax = [int(temp[0]), int(temp[0])]
-            elif len(temp) > 1 :
-                range_ngpu_minmax = [int(temp[0]), int(temp[1])]
-            else:
-                print('Invalid format of --ngpus option')
-                exit(1)
-        except ValueError :
-            print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i][8:]+'\" to valid number(s)')
-            exit(1)
-        i += 1
-        continue
-    if argv[i].startswith('--ngpus'):
-        try:
+    if argv[i].startswith('--ngpus') :
+        if argv[i] == '--ngpus' :
             temp = argv[i+1].split('-')
+        elif argv[i][7] == '=' :
+            temp = argv[i][8:].split('-')
+        else:
+            print('Unknown options/arguments :: \''+argv[i]+'\'\nSee \'sbill --help\'')
+        try:
             if len(temp) == 1 :
                 range_ngpu_minmax = [int(temp[0]), int(temp[0])]
             elif len(temp) > 1 :
                 range_ngpu_minmax = [int(temp[0]), int(temp[1])]
             else:
-                print('Invalid format of --ngpus option')
+                print('Invalid format of --ngpus option, should be either <num> or <min>-<max>')
                 exit(1)
         except ValueError :
-            print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i+1]+'\" to valid number(s)')
+            if argv[i] == '--ngpus' :
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i+1]+'\" to valid number(s)')
+            elif argv[i][7] == '=' :
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i][8:]+'\" to valid number(s)')
             exit(1)
-        i += 2
+        i += 2 if argv[i] == '--ngpus' else 1
         continue
+    if argv[i].startswith('-G'):
+        if argv[i] == '-G' :
+            temp = argv[i+1].split('-')
+        else:
+            temp = argv[i][2:].split('-')
+        try:
+            if len(temp) == 1 :
+                range_ngpu_minmax = [int(temp[0]), int(temp[0])]
+            elif len(temp) > 1 :
+                range_ngpu_minmax = [int(temp[0]), int(temp[1])]
+            else:
+                print('Invalid format of -G option, should be either <num> or <min>-<max>')
+                exit(1)
+        except ValueError :
+            if argv[i] == '-G' :
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i+1]+'\" to valid number(s)')
+            else:
+                print('Invalid input argument in', argv[i],':: cannot convert \"'+argv[i][2:]+'\" to valid number(s)')
+            exit(1)
+        i += 2 if argv[i] == '-G' else 1
+        continue
+
 
     # *** Slurm output options ***
     if argv[i] == '--sumby' or argv[i] == '--sum-by' :
@@ -447,7 +533,8 @@ while i < len(argv) :
         elif 'user' in sum_by.lower() :
             sum_by = 'User'
         else:
-            print('Unknown options/arguments :: \''+argv[i]+'\'\nSee \'sbill --help\'')
+            print('Unknown options/arguments :: \''+argv[i]+'\' with the following argument \''+argv[i+1]+'\' is invalid.')
+            print('It should be either account or user.\nSee \'sbill --help\'')
             exit(1)
         i += 2
         continue
@@ -456,7 +543,7 @@ while i < len(argv) :
         if 'account' in sum_by.lower() :
             sum_by = 'Account'
         elif 'user' in sum_by.lower() :
-            sum_by = 'User'        
+            sum_by = 'User'
         else:
             print('Unknown options/arguments :: \''+argv[i]+'\'\nSee \'sbill --help\'')
             exit(1)
@@ -487,7 +574,7 @@ while i < len(argv) :
         try:
             nbin_histogram = max(int(temp_opt[0]), 1)
         except ValueError :
-            print('Invalid input argument in -H, --histogram option :: cannot convert \''+temp_opt[0]+'\' to a valid number')
+            print('Invalid input argument in -H, --histogram option :: cannot convert \''+temp_opt[0]+'\' to a valid number of bin')
             exit(1)
     elif len(temp_opt) == 1 :
         is_show_job_histogram = True
@@ -500,46 +587,53 @@ while i < len(argv) :
             if len(temp_opt) >= 2 :
                 field_histogram = temp_opt[1]
         else:
-            print('Invalid format of -H or --histogram option')
+            print('Invalid format of -H or --histogram= option.\nSee \'sbill --help\'')
             exit(1)
         try:
             nbin_histogram = max(int(temp_opt[0]), 1)
         except ValueError :
-            print('Invalid input argument in -H, --histogram option :: cannot convert \''+temp_opt[0]+'\' to a valid number')
+            print('Invalid input argument in -H, --histogram option :: cannot convert \''+temp_opt[0]+'\' to a valid number of bin')
             exit(1)
     if i != j : temp_opt = [] ; continue ;
 
-    if argv[i].startswith('--to_csv=') :
-        csv_outfile = argv[i][9:]
+    if argv[i].startswith('--to_csv'):
+        if argv[i] == '--to_csv' :
+            csv_outfile = argv[i+1]
+        elif argv[i][8] == '=' :
+            csv_outfile = argv[i][9:]
+        else:
+            print('Unknown options/arguments :: \''+argv[i]+'\'\nSee \'sbill --help\'')
         if csv_outfile == '' :
-            print('Missing an input filename after :: --to_csv=<filename>')
+            print('Missing an input filename after :: --to_csv[=]<filename>')
             exit(1)
         else:
-            i += 1
+            i += 2 if argv[i] == '--to_csv' else 1
             continue
-    if argv[i].startswith('--to_csv') :
-        csv_outfile = argv[i+1]
-        if csv_outfile == '' :
-            print('Missing an input filename after :: --to_csv <filename>')
+
+    if argv[i].startswith('--csv_sep'):
+        if argv[i] == '--csv_sep' :
+            csv_delimiter = argv[i+1]
+        elif argv[i][9] == '=' :
+            csv_delimiter = argv[i][10:]
+        else:
+            print('Unknown options/arguments :: \''+argv[i]+'\'\nSee \'sbill --help\'')
+        if csv_delimiter == '' :
+            print('Missing an input separator/delimiter :: --csv_sep[=]<character>')
             exit(1)
         else:
-            i += 2
+            i += 2 if argv[i] == '--csv_sep' else 1
             continue
 
     if argv[i] == '-X' or argv[i] == '--summary' :
         is_show_only_summary = True
-        print('sbill: note: --summary option implicitly implies --truncate (--trim-jobtime)')
-        slurm_filter_opts.append('--truncate')
         i += 1
         continue
 
 
     # Other Slurm options
-    i = parse_filter_opts(i,'-T','--truncate', has_argv=False)
-    if i != j : continue ;
-
-    if argv[i] == '--trim' or argv[i] == '--trim-jobtime' :
+    if argv[i] == '-T' or argv[i] == '--trim' or argv[i] == '--trim-jobtime' or  argv[i] == '--truncate' :
         slurm_filter_opts.append('--truncate')
+        trim_jobtime = True
         i += 1
         continue
 
@@ -547,26 +641,55 @@ while i < len(argv) :
     if i != j : continue ;
 
     try:
-        i = parse_filter_opts(i,'','--units', has_argv=True, var=slurm_other_format_opts)
+        i = parse_filter_opts(i,'','--units', has_argv=True, var=temp_opt)
     except IndexError :
         print('Invalid input argument in --units option :: Units was not specified.')
         exit(1)
-    if i != j : continue ;
+    if len(temp_opt) > 1 :
+        slurm_other_format_opts.append('--units=' + temp_opt[1][0])
+        slurm_mem_unit = temp_opt[1][0]
+    elif len(temp_opt) == 1 :
+        if temp_opt[0].startswith('--units=') :
+            slurm_other_format_opts.append(temp_opt[0][:9])
+            slurm_mem_unit = temp_opt[0][8] 
+        else:
+            print('Invalid input argument in --units option :: Ambiguous inputs, please explicitly use --units=[KMGTP].')
+            exit(1)
+    if i != j : temp_opt = [] ; continue ;
+
 
     # Other miscellaneous options
     if argv[i] == '-V' or argv[i] == '--version' :
         slurm = str(check_output(['sinfo','-V']).decode('ascii'))
-        print('sbill',__version__,'on',__HPC__,'with', slurm, end='')
+        print('sbill',__version__)
+        print('-> For',__HPC__)
+        print('-> Using', slurm, end='')
+        print('-> Accounting start on',SLURM_STARTDATE)
         exit(0)
+
     if argv[i] == '-h' or argv[i] == '--help' :
         show_sbill_usage()
         exit(0)
+
     if argv[i] == '--helpformat' :
         sacctformat = str(check_output(['sacct','--helpformat']).decode('ascii'))
+        print("")
         print("--- Fields available from SLURM ---")
         print(sacctformat)
-        print("--- Additional fields available from SBILL ---")
-        print("= "+Service+", Billing, NGPUS, "+CPUusage+", "+GPUusage+", AllocRam\n")
+        print("--- Fields available from SBILL ---")
+        print('{:<20}'.format(Service), end="")
+        print('{:<20}'.format(BillingUnit), end="")
+        print('{:<20}'.format(CPUusage), end="")
+        print('{:<20}'.format(GPUusage), end="\n")
+        print('{:<20}'.format("NGPUS"), end="")
+        print('{:<20}'.format("AllocRAM"), end="")
+        print('{:<20}'.format("Billing"), end="")
+        print('{:<20}'.format("Default"), end="\n")
+        print("")
+        print("Note: ")
+        print("1) "+CPUusage+" and "+GPUusage+" are of allocation.")
+        print("2) "+BillingUnit+", AllocRAM and Billing are available after the job starts.")
+        print("3) \'Default\' field is equal to \'"+','.join(GLOBAL_SBILL_DEFAULT_FORMAT)+"\'\n")
         exit(0)
 
     # Not intented to be used
@@ -578,6 +701,12 @@ while i < len(argv) :
     if i == j :
         print('Unknown options/arguments :: \''+argv[i]+'\'\nSee \'sbill --help\'')
         exit(1)
+
+
+# Check input options
+if has_starttime_filter and has_endtime_filter and is_show_only_summary :
+    print('sbill: note: Using --summary with both --starttime and --endtime will implicitly set --truncate (--trim).\n')
+    slurm_filter_opts.append('--truncate')
 
 
 # ------  Functions to get data from SLURM ------
@@ -700,7 +829,7 @@ def AssocAccount_from_sacctmgr():
         exit(1)
     else:
         data = parse_sacctmgr(data.decode('utf-8'))
-    
+
     return data[1:]
 
 
@@ -717,7 +846,7 @@ if isRestricted :
 # Weakness: Won't work when users specify non-associated accounts directly using -A
 #           (Tinkering user's input is troublesome)
 if isRestricted :
-    if not has_account_filter : 
+    if not has_account_filter :
         slurm_extra_account_filter = '-A ' + ','.join(assoc)
         slurm_other_sacct_opts.append(slurm_extra_account_filter)
 
@@ -759,18 +888,23 @@ def filter_usage(Col, List):
 def filter_acct(Col, List):
     nrow = len(usage['JobID'])
     mask = [False]*nrow
+    any_removed = False
     for nr in range(nrow):
         if usage[Col][nr] in List :
             mask[nr] = True
+        else:
+            any_removed = True
     pop_usage(mask)
+    return any_removed
 
 
 # I. Account
 # Only show jobs submitted using associated accounts (Second guard)
 # Strength: Correct, No loop hole
 # Weakness: Slow
+remove_nonassoc = False
 if isRestricted :
-    filter_acct('Account', assoc)
+    remove_nonassoc = filter_acct('Account', assoc)
 
 
 # II. State
@@ -786,6 +920,19 @@ usage['NCPUS']  = [ int(num) for num in usage['NCPUS'] ]
 usage[Service]  = [ calService(b,s) for b,s in zip(usage[Treskey[0]],usage['ElapsedRaw']) ]
 usage[CPUusage] = [ calCPUusage(ncpu,s) for ncpu,s in zip(usage['NCPUS'],usage['ElapsedRaw']) ]
 usage[GPUusage] = [ calGPUusage(ngpu,s) for ngpu,s in zip(usage[Treskey[1]],usage['ElapsedRaw']) ]
+usage[BillingUnit] = [ calBillingUnit(b) for b in usage[Treskey[0]] ]
+
+if slurm_mem_unit in ['K','M','G','T','P'] :
+    mem_unit_ratio = {'K': 1, 'M': 2, 'G': 3, 'T': 4, 'P': 5}
+    def convertMem(text, to_unit):
+        text = str(text)
+        if len(text) < 2 :
+            return text
+        from_unit = text[-1]
+        value = float(text[:-1])
+        value *= pow(1024, mem_unit_ratio[from_unit] - mem_unit_ratio[to_unit])
+        return '{:.2f}'.format(value) + to_unit
+    usage[Treskey[2]] = [ convertMem(m,slurm_mem_unit) for m in usage[Treskey[2]] ]
 
 # Filter range before sum and get other info
 if len(range_minmax) >= 1 :
@@ -794,6 +941,19 @@ if len(range_minmax) >= 1 :
     else:
         mask = [ (range_minmax[0]<=value) & (value<range_minmax[1]) for value in usage[Service] ]
     pop_usage(mask)
+
+if len(runtime_minmax) >= 1 :
+    if len(runtime_minmax) == 1 :
+        mask = [ runtime_to_sec*runtime_minmax[0]<=value for value in usage['ElapsedRaw'] ]
+    else:
+        mask = [ (runtime_to_sec*runtime_minmax[0]<=value) & (value<runtime_to_sec*runtime_minmax[1]) for value in usage['ElapsedRaw'] ]
+    pop_usage(mask)
+    if runtime_to_sec == 1 :
+        runtime_unit = 'second'
+    elif runtime_to_sec == 60 :
+        runtime_unit = 'minute'
+    else:
+        runtime_unit = 'hour'
 
 if len(range_ncpu_minmax) >= 2 :
     mask = [ (range_ncpu_minmax[0]<=value) & (value<=range_ncpu_minmax[1]) for value in usage['NCPUS'] ]
@@ -811,6 +971,8 @@ if len(range_ngpu_minmax) >= 2 :
 if len(usage['JobID']) == 0 :
     if isRestricted :
         print('*** No (associated) jobs to be displayed ***')
+        if remove_nonassoc :
+            print('= You can only see the jobs that are associated with your Slurm billing accounts')
     else:
         print('*** No jobs to be displayed ***')
     exit(0)
@@ -832,8 +994,12 @@ if len(slurm_format_opts) == 0 :
     else:
         slurm_format_opts = GLOBAL_SBILL_DEFAULT_FORMAT
 
-# Parse format options == fields 
-# --> separate field and len appeared in '--format=field1%len1,field2%len2' 
+for i in range(len(slurm_format_opts)):
+    if 'default' == slurm_format_opts[i].lower() :
+        slurm_format_opts = slurm_format_opts[:i] + GLOBAL_SBILL_DEFAULT_FORMAT + slurm_format_opts[i+1:]
+
+# Parse format options == fields
+# --> separate field and len appeared in '--format=field1%len1,field2%len2'
 len_opt = [-1]*len(slurm_format_opts)        # -1 indicates default
 for i in range(len(slurm_format_opts)) :
     temp = slurm_format_opts[i].split('%')
@@ -846,40 +1012,22 @@ for i in range(len(slurm_format_opts)) :
             CPUusageDecimal = len_opt[i]
         elif temp[0].lower() == GPUusage.lower():
             GPUusageDecimal = len_opt[i]
+        elif temp[0].lower() == BillingUnit.lower():
+            BillingUnitDecimal = len_opt[i]
 
-# --- Headers of fields only appears in SBILL are fixed
-# --- Headers of fields from SACCT are as specified in --format=
+# --- Headers of fields only appears in SBILL will be fixed
+# --- Headers of fields from SACCT are as specified in --format=, fix them
 
-sacct_all_format_opts = ['AdminComment', 'AllocCPUS', 'AllocNodes', 'AllocTRES', 'AssocID',
-        'AveCPU', 'AveCPUFreq', 'AveDiskRead', 'AveDiskWrite', 'AvePages', 'AveRSS', 'AveVMSize', 
-        'BlockID', 'Cluster', 'Comment', 'Constraints', 'ConsumedEnergy', 'ConsumedEnergyRaw', 'Container', 'CPUTime', 'CPUTimeRAW',
-        'DBIndex', 'DerivedExitCode', 'Elapsed', 'Eligible', 'End', 'ExitCode', 'Flags', 'GID', 'Group',
-        'JobID', 'JobIDRaw', 'JobName', 'Layout', 'MaxDiskRead', 'MaxDiskReadNode', 'MaxDiskReadTask', 
-        'MaxDiskWrite', 'MaxDiskWriteNode', 'MaxDiskWriteTask', 'MaxPages', 'MaxPagesNode', 'MaxPagesTask', 
-        'MaxRSS', 'MaxRSSNode', 'MaxRSSTask', 'MaxVMSize', 'MaxVMSizeNode', 'MaxVMSizeTask', 'McsLabel', 'MinCPU', 'MinCPUNode', 'MinCPUTask',
-        'NNodes', 'NodeList', 'NTasks', 'Partition', 'Priority', 'QOS', 'QOSRAW', 'Reason', 
-        'ReqCPUFreq', 'ReqCPUFreqGov', 'ReqCPUFreqMax', 'ReqCPUFreqMin', 'ReqCPUS', 'ReqMem', 'ReqNodes', 'ReqTRES', 
-        'Reservation', 'ReservationId', 'Reserved', 'ResvCPU', 'ResvCPURAW', 
-        'Start', 'Submit', 'SubmitLine', 'Suspended', 'SystemComment', 'SystemCPU', 'Timelimit', 'TimelimitRaw', 'TotalCPU', 
-        'TRESUsageInAve', 'TRESUsageInMax', 'TRESUsageInMaxNode', 'TRESUsageInMaxTask', 
-        'TRESUsageInMin', 'TRESUsageInMinNode', 'TRESUsageInMinTask', 'TRESUsageInTot', 
-        'TRESUsageOutAve', 'TRESUsageOutMax', 'TRESUsageOutMaxNode', 'TRESUsageOutMaxTask', 
-        'TRESUsageOutMin', 'TRESUsageOutMinNode', 'TRESUsageOutMinTask', 'TRESUsageOutTot', 
-        'UID', 'User', 'UserCPU', 'WCKey', 'WCKeyID', 'WorkDir']
-         # 'Account', 'State', 'NCPUS', 'ElapsedRaw'
 lower_sacct_all_format_opts = [ n.lower() for n in sacct_all_format_opts ]
 
 sacct_format_opts = slurm_format_opts.copy()     # Fields to be inquired
-display_format_opts = slurm_format_opts.copy()   # Fields to be displayed
+display_format_opts = slurm_format_opts.copy()   # Fields/Column names to be displayed
 
 lower_format_opts = [ n.lower() for n in slurm_format_opts ]
 j = 0
 for i in range(len(lower_format_opts)):
     # Sbill required fields
-    if 'billing' == lower_format_opts[i] :
-        sacct_format_opts.pop(j)
-        display_format_opts[i] = 'Billing'
-    elif Service.lower() == lower_format_opts[i] :
+    if Service.lower() == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = Service
     elif 'ngpus' == lower_format_opts[i] :
@@ -891,9 +1039,15 @@ for i in range(len(lower_format_opts)):
     elif GPUusage.lower() == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = GPUusage
+    elif BillingUnit.lower() == lower_format_opts[i] :
+        sacct_format_opts.pop(j)
+        display_format_opts[i] = BillingUnit
     elif 'allocram' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
-        display_format_opts[i] = 'AllocRam'
+        display_format_opts[i] = 'AllocRAM'
+    elif 'billing' == lower_format_opts[i] :
+        sacct_format_opts.pop(j)
+        display_format_opts[i] = 'Billing'
     elif 'account' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = 'Account'
@@ -906,48 +1060,48 @@ for i in range(len(lower_format_opts)):
     elif 'elapsedraw' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = 'ElapsedRaw'
-    
+
     # (Possible) Misspelled/Hidden options
     elif 'elapse' == lower_format_opts[i] :
         sacct_format_opts[j]   = 'Elapsed'
         display_format_opts[i] = 'Elapsed'
-        print('sbill: warning: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
         j += 1
     elif 'elapseraw' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = 'ElapsedRaw'
-        print('sbill: warning: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
     elif 'node' == lower_format_opts[i] :
         sacct_format_opts[j]   = 'NodeList'
         display_format_opts[i] = 'NodeList'
-        print('sbill: warning: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
         j += 1
     elif 'nnode' == lower_format_opts[i] :
         sacct_format_opts[j]   = 'NNodes'
         display_format_opts[i] = 'NNodes'
-        print('sbill: warning: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
         j += 1
     elif 'ncpu' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = 'NCPUS'
-        print('sbill: warning: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
     elif 'cpus' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = 'NCPUS'
-        print('sbill: warning: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
     elif 'cpu' == lower_format_opts[i] :
         sacct_format_opts[j]   = 'CPUTime'
         display_format_opts[i] = 'CPUTime'
-        print('sbill: warning: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
         j += 1
     elif 'ngpu' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = 'NGPUS'
-        print('sbill: warning: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
     elif 'gpus' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = 'NGPUS'
-        print('sbill: warning: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
 
     # SLURM fields
     else:
@@ -966,18 +1120,21 @@ if not 'JobID' in sacct_format_opts :
     sacct_format_opts.append('JobID')
 if sum_by == 'User' and not 'User' in sacct_format_opts :
     sacct_format_opts.append('User')
+if field_histogram.lower() in ['nnode','nodes','nnodes','node'] :
+    if not 'NNodes' in sacct_format_opts :
+        sacct_format_opts.append('NNodes')
 
 
 # ---- SBILL inquiry SACCT for additional fields
 
-format_opts = ['--format=' + ','.join(sacct_format_opts),'-X','-p','--noheader']
+format_opts = ['--format=' + ','.join(sacct_format_opts),'-X','-p','--delimiter=\\','--noheader']
 slurm_opts = format_opts + slurm_other_format_opts + slurm_filter_opts + slurm_other_sacct_opts
-info = data_from_sacct(slurm_opts, columns=sacct_format_opts, sep='|')
+info = data_from_sacct(slurm_opts, columns=sacct_format_opts, sep='\\')
 
 # Merge to usage
 usage["Billing"]  = usage.pop(Treskey[0])
 usage["NGPUS"]    = usage.pop(Treskey[1])
-usage["AllocRam"] = usage.pop(Treskey[2])
+usage["AllocRAM"] = usage.pop(Treskey[2])
 
 jobid_list = info['JobID'].copy()
 last_index = len(usage['JobID']) -1
@@ -996,7 +1153,7 @@ if len(info['JobID']) == len(usage['JobID']) :
     usage.update(info)
 else:
     print('sbill: error: Inconsistent job lists.')
-    print('\nPlease report this bug and your input command to your system admin and \"https://github.com/SKanoksi/SBILL-SLURM\"')
+    print('\nPlease capture and report this bug to your system admin and \"https://github.com/SKanoksi/SBILL-SLURM\"')
     exit(1)
 
 
@@ -1010,22 +1167,25 @@ if len(sum_by) != 0 :
         sumby_results[t][Service] = 0.
         sumby_results[t][CPUusage] = 0.
         sumby_results[t][GPUusage] = 0.
+        sumby_results[t]['NumJob'] = 0
     for i in range(len(usage['JobID'])):
         t = usage[sum_by][i]
         sumby_results[t][Service] += usage[Service][i]
         sumby_results[t][CPUusage] += usage[CPUusage][i]
         sumby_results[t][GPUusage] += usage[GPUusage][i]
+        sumby_results[t]['NumJob'] += 1
 
 
 # ----------- Save to ------------
 if csv_outfile != "" :
+    csv_value = "%s" + csv_delimiter
     with open(csv_outfile, 'w') as f:
         for k in display_format_opts :
-            f.write("%s," % k)
+            f.write(csv_value % k)
         f.write("\n")
         for n in range(len(usage[display_format_opts[0]])):
             for k in display_format_opts :
-                f.write("%s," % str(usage[k][n]))
+                f.write(csv_value % str(usage[k][n]))
             f.write("\n")
     print('\n*** Job records are saved to \"'+csv_outfile+"\" ***\n")
     print('---------- ---------- ----------')
@@ -1048,6 +1208,8 @@ if not is_show_only_summary :
                 decimal = CPUusageDecimal
             elif name_opt == GPUusage :
                 decimal = GPUusageDecimal
+            elif name_opt == BillingUnit :
+                decimal = BillingUnitDecimal
             else:
                 decimal = -1
 
@@ -1063,12 +1225,12 @@ if not is_show_only_summary :
 
             num_char = max([len(name_opt)+1, num_char])
             HeadFormat += '{:>' + str(num_char) + '}|'
-            if name_opt == Service or name_opt == CPUusage or name_opt == GPUusage :
+            if name_opt == Service or name_opt == CPUusage or name_opt == GPUusage or name_opt == BillingUnit :
                 PrintFormat += '{:>' + str(num_char) + ',.' + str(decimal) + 'f}|'
             else:
                 PrintFormat += '{:>' + str(num_char) + '}|'
         else:
-            if name_opt == Service or name_opt == CPUusage or name_opt == GPUusage :
+            if name_opt == Service or name_opt == CPUusage or name_opt == GPUusage or name_opt == BillingUnit :
                 try_format = '{:,.' + str(len_opt[i]) + 'f}'
                 num_char = max([len(try_format.format(x)) for x in usage[name_opt]]) + 2
                 num_char = max([len(name_opt)+1, num_char])
@@ -1093,31 +1255,41 @@ if not is_show_only_summary :
         for i in range(len(display_format_opts)) :
             print(PrintFormat[i].format(usage[display_format_opts[i]][nr]), end='')
         print('')
-    print('---------- ---------- ----------')
+    print('--------------------------------')
 
 # 2. Print filter info
-print('')
 if len(slurm_filter_opts) != 0 :
-    print('With SLURM job filter options: ' + ' '.join(slurm_filter_opts))
-if len(state_selected) != 0 or len(range_minmax) >= 1 or len(range_ncpu_minmax) >= 2 or len(range_ngpu_minmax) >= 2 :
-    print('With SBILL job filter options:', end='')
+    print('Note: SLURM job filter/query options applied: ' + ' '.join(slurm_filter_opts))
+if len(state_selected) != 0 or len(range_minmax) >= 1 or len(runtime_minmax) >=1 or len(range_ncpu_minmax) >= 2 or len(range_ngpu_minmax) >= 2 :
+    if len(slurm_filter_opts) != 0 :
+        print('      SBILL job filter/query options applied:', end='')
+    else:
+        print('Note: SBILL job filter/query options applied:', end='')
     if len(state_selected) != 0 :
         print(' --state=' + ','.join(state_selected), end='')
     if len(range_minmax) == 1 :
         print(' --range=' + str(range_minmax[0]), end='')
     elif len(range_minmax) > 1 :
         print(' --range=' + str(range_minmax[0]) + '-' + str(range_minmax[1]), end='')
-    if len(range_ncpu_minmax) >= 2 :
+    if len(runtime_minmax) == 1 :
+        print(' --runtime=' + str(runtime_minmax[0]) + ':' + runtime_unit, end='')
+    elif len(runtime_minmax) > 1 :
+        print(' --runtime=' + str(runtime_minmax[0]) + '-' + str(runtime_minmax[1]) + ':' + runtime_unit, end='')
+    if len(range_ncpu_minmax) > 1 :
         if range_ncpu_minmax[0] == range_ncpu_minmax[1] :
             print(' --ncpus=' + str(range_ncpu_minmax[0]), end='')
         else:
             print(' --ncpus=' + str(range_ncpu_minmax[0]) + '-' + str(range_ncpu_minmax[1]), end='')
-    if len(range_ngpu_minmax) >= 2 :
+    if len(range_ngpu_minmax) > 1 :
         if range_ngpu_minmax[0] == range_ngpu_minmax[1] :
             print(' --ngpus=' + str(range_ngpu_minmax[0]), end='')
         else:
             print(' --ngpus=' + str(range_ngpu_minmax[0]) + '-' + str(range_ngpu_minmax[1]), end='')
     print('')
+if isRestricted and remove_nonassoc :
+    print('\nWarning: Only jobs that are associated with your Slurm billing accounts are shown.')
+if trim_jobtime and len(runtime_minmax) != 0 :
+    print('\nWarning: Using --runtime= when --truncate (--trim) is set could lead to an imprecise result.')
 print('')
 
 # 3. Print total
@@ -1155,7 +1327,7 @@ if len(try_gpu) > 1 :
 else:
     print('')
 
-print('{:<30}'.format('Total displayed/filtered jobs '),'= ', end='')
+print('{:<30}'.format('Total filtered/queried jobs '),'= ', end='')
 print(Format_L.format(try_job))
 print('')
 
@@ -1168,7 +1340,7 @@ if len(sum_by) != 0 :
     print(IndexFormat.format(sum_by), end='')
 
     Decimal = [ServiceDecimal,CPUusageDecimal,GPUusageDecimal]
-    Tag     = [Service, CPUusage,GPUusage]
+    Tag     = [Service,CPUusage,GPUusage]
     Format  = ''
     for T,D in zip(Tag, Decimal) :
         try_format = '{:,.' + str(D) + 'f}'
@@ -1179,6 +1351,7 @@ if len(sum_by) != 0 :
         Format += '{:>' + str(num_char) + ',.' + str(D) + 'f}|'
         HeadFormat = '{:>' + str(num_char) + '}'
         print(HeadFormat.format(T), end='')
+    print(HeadFormat.format('Filtered jobs'), end='') # Borrow GPUusage
     print('')
     Format = Format.split('|')
 
@@ -1187,6 +1360,7 @@ if len(sum_by) != 0 :
         print(Format[0].format(sumby_results[k][Service]), end='')
         print(Format[1].format(sumby_results[k][CPUusage]), end='')
         print(Format[2].format(sumby_results[k][GPUusage]), end='')
+        print(HeadFormat.format(sumby_results[k]['NumJob']), end='')
         print('')
     print('')
 
@@ -1204,16 +1378,17 @@ if is_show_job_histogram :
     elif field_histogram.lower() == GPUusage.lower() :
         field_histogram = GPUusage
         Decimal = GPUusageDecimal + 1
-    elif field_histogram.lower() == 'nnode' or field_histogram.lower() == 'nodes' or field_histogram.lower() == 'nnodes' :
+    elif field_histogram.lower() == BillingUnit.lower() :
+        field_histogram = BillingUnit
+        Decimal = BillingUnitDecimal + 1
+    elif field_histogram.lower() in ['nnode','nodes','nnodes','node'] :
         field_histogram = 'NNodes'
-        if not field_histogram in display_format_opts :
-            print('sbill: error: Histogram of nodes requires \'NNodes\' field in --format= option.')
-            exit(1)
+        usage[field_histogram] = [ int(value) for value in usage[field_histogram] ]
         Decimal = 1
-    elif field_histogram.lower() == 'ncpu' or field_histogram.lower() == 'cpus' or field_histogram.lower() == 'ncpus' :
+    elif field_histogram.lower() in ['ncpu','cpus','ncpus','cpu'] :
         field_histogram = 'NCPUS'
         Decimal = 1
-    elif field_histogram.lower() == 'ngpu' or field_histogram.lower() == 'gpus' or field_histogram.lower() == 'ngpus' :
+    elif field_histogram.lower() in ['ngpu','gpus','ngpus','gpu'] :
         field_histogram = 'NGPUS'
         Decimal = 1
     elif field_histogram.lower() == 'runsec' :
@@ -1257,14 +1432,14 @@ if is_show_job_histogram :
     else:
         hist_range = (0, max(usage[field_histogram]))
 
-    if field_histogram.lower() in ['nnodes', 'ncpus','ngpus','elapsedraw'] : # For fields of integer
+    if field_histogram.lower() in ['nnodes','ncpus','ngpus','elapsedraw'] :  # For fields of integer
         int_spacing = int(hist_range[1] - hist_range[0]) + 1
         if int_spacing < nbin_histogram :
             nbin_histogram = int_spacing
             print('sbill: warning: Specified number of bin is too fine for the data --> Readjusting.')
 
     count, bin_edges = hist(usage[field_histogram], bins=nbin_histogram, range=hist_range)
-    
+
     try_format = '{:,.'+str(Decimal)+'f}'
     num_char = max( [len(try_format.format(x)) for x in bin_edges] ) + 2
     if num_char < 6 :

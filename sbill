@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# SBILL version 1.5.0-RC2
+# SBILL version 1.5.0-RC3
 #
 # Query SLURM billing per job through SLURM sacct command
 #
@@ -15,7 +15,7 @@
 
 # ---- START OF COMPILE-TIME SETUP -----
 
-__version__ = '1.5.0-RC2 (10-Jan-2025)'
+__version__ = '1.5.0-RC3 (10-Jan-2025)'
 __HPC__ = 'XXX HPC of XXX center'
 
 # Set up
@@ -43,9 +43,9 @@ calBillingUnit = lambda billing : billing/100
 BillingUnitDecimal = 3
 
 GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]
-GLOBAL_SBILL_LONG_FORMAT    = ['JobID','JobName%10','User','Account','Partition','NNodes','NCPUS','NGPUS','AllocRam','NodeList%24','Elapsed','State',BillingUnit,Service]
+GLOBAL_SBILL_LONG_FORMAT    = ['JobID','JobName%10','User','Account','Partition','NNodes','NCPUS','NGPUS','AllocRAM','NodeList%24','Elapsed','State',BillingUnit,Service]
 
-isRestricted  = True           # True = display only jobs related by associated accounts
+isRestricted  = True          # True = display only jobs related by associated accounts
 AdminAccounts = ['admin']     # Admin account to grant special permission even when isRestricted = True
 # Note:
 # - 'AdminAccounts' is meaningless when 'PrivateData' is enforced in slurm.conf
@@ -181,6 +181,7 @@ is_show_total_SU = True
 sum_by = []
 csv_outfile = ''
 csv_delimiter = ","
+slurm_mem_unit = None
 is_show_only_summary = False
 has_account_filter = False
 trim_jobtime = False
@@ -364,7 +365,7 @@ while i < len(argv) :
         if temp_opt[0].startswith('--state=') :
             state_selected = temp_opt[0][8:].split(',')
         else:
-            print('Invalid input argument in -s, --state option :: Ambiguous inputs, please explicitly use --state=<STATE_LIST>.')
+            print('Invalid input argument in --state option :: Ambiguous inputs, please explicitly use --state=<STATE_LIST>.')
             exit(1)
     if i != j : temp_opt = [] ; continue ;
 
@@ -640,11 +641,22 @@ while i < len(argv) :
     if i != j : continue ;
 
     try:
-        i = parse_filter_opts(i,'','--units', has_argv=True, var=slurm_other_format_opts)
+        i = parse_filter_opts(i,'','--units', has_argv=True, var=temp_opt)
     except IndexError :
         print('Invalid input argument in --units option :: Units was not specified.')
         exit(1)
-    if i != j : continue ;
+    if len(temp_opt) > 1 :
+        slurm_other_format_opts.append('--units=' + temp_opt[1][0])
+        slurm_mem_unit = temp_opt[1][0]
+    elif len(temp_opt) == 1 :
+        if temp_opt[0].startswith('--units=') :
+            slurm_other_format_opts.append(temp_opt[0][:9])
+            slurm_mem_unit = temp_opt[0][8] 
+        else:
+            print('Invalid input argument in --units option :: Ambiguous inputs, please explicitly use --units=[KMGTP].')
+            exit(1)
+    if i != j : temp_opt = [] ; continue ;
+
 
     # Other miscellaneous options
     if argv[i] == '-V' or argv[i] == '--version' :
@@ -670,13 +682,13 @@ while i < len(argv) :
         print('{:<20}'.format(CPUusage), end="")
         print('{:<20}'.format(GPUusage), end="\n")
         print('{:<20}'.format("NGPUS"), end="")
-        print('{:<20}'.format("AllocRam"), end="")
+        print('{:<20}'.format("AllocRAM"), end="")
         print('{:<20}'.format("Billing"), end="")
         print('{:<20}'.format("Default"), end="\n")
         print("")
         print("Note: ")
         print("1) "+CPUusage+" and "+GPUusage+" are of allocation.")
-        print("2) "+BillingUnit+", AllocRam and Billing are available after the job starts.")
+        print("2) "+BillingUnit+", AllocRAM and Billing are available after the job starts.")
         print("3) \'Default\' field is equal to \'"+','.join(GLOBAL_SBILL_DEFAULT_FORMAT)+"\'\n")
         exit(0)
 
@@ -885,6 +897,7 @@ def filter_acct(Col, List):
     pop_usage(mask)
     return any_removed
 
+
 # I. Account
 # Only show jobs submitted using associated accounts (Second guard)
 # Strength: Correct, No loop hole
@@ -909,6 +922,17 @@ usage[CPUusage] = [ calCPUusage(ncpu,s) for ncpu,s in zip(usage['NCPUS'],usage['
 usage[GPUusage] = [ calGPUusage(ngpu,s) for ngpu,s in zip(usage[Treskey[1]],usage['ElapsedRaw']) ]
 usage[BillingUnit] = [ calBillingUnit(b) for b in usage[Treskey[0]] ]
 
+if slurm_mem_unit in ['K','M','G','T','P'] :
+    mem_unit_ratio = {'K': 1, 'M': 2, 'G': 3, 'T': 4, 'P': 5}
+    def convertMem(text, to_unit):
+        text = str(text)
+        if len(text) < 2 :
+            return text
+        from_unit = text[-1]
+        value = float(text[:-1])
+        value *= pow(1024, mem_unit_ratio[from_unit] - mem_unit_ratio[to_unit])
+        return '{:.2f}'.format(value) + to_unit
+    usage[Treskey[2]] = [ convertMem(m,slurm_mem_unit) for m in usage[Treskey[2]] ]
 
 # Filter range before sum and get other info
 if len(range_minmax) >= 1 :
@@ -1020,7 +1044,7 @@ for i in range(len(lower_format_opts)):
         display_format_opts[i] = BillingUnit
     elif 'allocram' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
-        display_format_opts[i] = 'AllocRam'
+        display_format_opts[i] = 'AllocRAM'
     elif 'billing' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = 'Billing'
@@ -1096,7 +1120,7 @@ if not 'JobID' in sacct_format_opts :
     sacct_format_opts.append('JobID')
 if sum_by == 'User' and not 'User' in sacct_format_opts :
     sacct_format_opts.append('User')
-if field_histogram.lower() == 'nnode' or field_histogram.lower() == 'nodes' or field_histogram.lower() == 'nnodes' :
+if field_histogram.lower() in ['nnode','nodes','nnodes','node'] :
     if not 'NNodes' in sacct_format_opts :
         sacct_format_opts.append('NNodes')
 
@@ -1110,7 +1134,7 @@ info = data_from_sacct(slurm_opts, columns=sacct_format_opts, sep='\\')
 # Merge to usage
 usage["Billing"]  = usage.pop(Treskey[0])
 usage["NGPUS"]    = usage.pop(Treskey[1])
-usage["AllocRam"] = usage.pop(Treskey[2])
+usage["AllocRAM"] = usage.pop(Treskey[2])
 
 jobid_list = info['JobID'].copy()
 last_index = len(usage['JobID']) -1
@@ -1357,14 +1381,14 @@ if is_show_job_histogram :
     elif field_histogram.lower() == BillingUnit.lower() :
         field_histogram = BillingUnit
         Decimal = BillingUnitDecimal + 1
-    elif field_histogram.lower() == 'nnode' or field_histogram.lower() == 'nodes' or field_histogram.lower() == 'nnodes' :
+    elif field_histogram.lower() in ['nnode','nodes','nnodes','node'] :
         field_histogram = 'NNodes'
         usage[field_histogram] = [ int(value) for value in usage[field_histogram] ]
         Decimal = 1
-    elif field_histogram.lower() == 'ncpu' or field_histogram.lower() == 'cpus' or field_histogram.lower() == 'ncpus' :
+    elif field_histogram.lower() in ['ncpu','cpus','ncpus','cpu'] :
         field_histogram = 'NCPUS'
         Decimal = 1
-    elif field_histogram.lower() == 'ngpu' or field_histogram.lower() == 'gpus' or field_histogram.lower() == 'ngpus' :
+    elif field_histogram.lower() in ['ngpu','gpus','ngpus','gpu'] :
         field_histogram = 'NGPUS'
         Decimal = 1
     elif field_histogram.lower() == 'runsec' :

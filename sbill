@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# SBILL version 1.5.0-RC3
+# SBILL version 1.5.0-RC4
 #
 # Query SLURM billing per job through SLURM sacct command
 #
@@ -15,7 +15,7 @@
 
 # ---- START OF COMPILE-TIME SETUP -----
 
-__version__ = '1.5.0-RC3 (10-Jan-2025)'
+__version__ = '1.5.0-RC4 (17-Jan-2025)'
 __HPC__ = 'XXX HPC of XXX center'
 
 # Set up
@@ -24,7 +24,6 @@ __HPC__ = 'XXX HPC of XXX center'
 # 2) Treskey[1] = Num GPU
 # 3) Treskey[2] = Ram memory
 Treskey = ['billing','gres/gpu','mem']  # Keywords to be captured from AllocTres in sacct
-SLURM_STARTDATE = '2025-01-10T00:00:00'
 
 Service    = 'Service'
 calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100
@@ -52,23 +51,18 @@ AdminAccounts = ['admin']     # Admin account to grant special permission even w
 # - SBILL restrict feature is provided as an additional guard on top of 'PrivateData',
 #   since 'Service' is more sensitive information <--> 'billing' is hidden in SACCT AllocTres
 
-sacct_all_format_opts = ['AdminComment', 'AllocCPUS', 'AllocNodes', 'AllocTRES', 'AssocID',
-        'AveCPU', 'AveCPUFreq', 'AveDiskRead', 'AveDiskWrite', 'AvePages', 'AveRSS', 'AveVMSize',
-        'BlockID', 'Cluster', 'Comment', 'Constraints', 'ConsumedEnergy', 'ConsumedEnergyRaw', 'Container', 'CPUTime', 'CPUTimeRAW',
-        'DBIndex', 'DerivedExitCode', 'Elapsed', 'Eligible', 'End', 'ExitCode', 'Flags', 'GID', 'Group',
-        'JobID', 'JobIDRaw', 'JobName', 'Layout', 'MaxDiskRead', 'MaxDiskReadNode', 'MaxDiskReadTask',
-        'MaxDiskWrite', 'MaxDiskWriteNode', 'MaxDiskWriteTask', 'MaxPages', 'MaxPagesNode', 'MaxPagesTask',
-        'MaxRSS', 'MaxRSSNode', 'MaxRSSTask', 'MaxVMSize', 'MaxVMSizeNode', 'MaxVMSizeTask', 'McsLabel', 'MinCPU', 'MinCPUNode', 'MinCPUTask',
-        'NNodes', 'NodeList', 'NTasks', 'Partition', 'Priority', 'QOS', 'QOSRAW', 'Reason',
+SLURM_STARTDATE  = '2025-01-17T00:00:00'     # SACCT/Slurm accounting start date
+AdminNoteMessage = 'Messages or notes from system admins'   # Message to be displayed when --version is invoked
+
+sacct_all_format_opts = ['Account', 'AdminComment', 'AllocCPUS', 'AllocNodes', 'AllocTRES', 'AssocID',
+        'Cluster', 'Comment', 'Constraints', 'ConsumedEnergy', 'ConsumedEnergyRaw', 'Container', 'CPUTime', 'CPUTimeRAW',
+        'DBIndex', 'DerivedExitCode', 'Elapsed', 'ElapsedRaw', 'Eligible', 'End', 'ExitCode', 'Flags', 'GID', 'Group',
+        'JobID', 'JobIDRaw', 'JobName', 'MaxDiskRead', 'MaxDiskReadNode', 'MaxDiskReadTask',
+        'NCPUS', 'NNodes', 'NodeList', 'Partition', 'Priority', 'QOS', 'QOSRAW', 'Reason',
         'ReqCPUFreq', 'ReqCPUFreqGov', 'ReqCPUFreqMax', 'ReqCPUFreqMin', 'ReqCPUS', 'ReqMem', 'ReqNodes', 'ReqTRES',
         'Reservation', 'ReservationId', 'Reserved', 'ResvCPU', 'ResvCPURAW',
-        'Start', 'Submit', 'SubmitLine', 'Suspended', 'SystemComment', 'SystemCPU', 'Timelimit', 'TimelimitRaw', 'TotalCPU',
-        'TRESUsageInAve', 'TRESUsageInMax', 'TRESUsageInMaxNode', 'TRESUsageInMaxTask',
-        'TRESUsageInMin', 'TRESUsageInMinNode', 'TRESUsageInMinTask', 'TRESUsageInTot',
-        'TRESUsageOutAve', 'TRESUsageOutMax', 'TRESUsageOutMaxNode', 'TRESUsageOutMaxTask',
-        'TRESUsageOutMin', 'TRESUsageOutMinNode', 'TRESUsageOutMinTask', 'TRESUsageOutTot',
+        'Start', 'State', 'Submit', 'SubmitLine', 'Suspended', 'SystemComment', 'SystemCPU', 'Timelimit', 'TimelimitRaw', 'TotalCPU',
         'UID', 'User', 'UserCPU', 'WCKey', 'WCKeyID', 'WorkDir']
-         # Excluding --> 'Account', 'State', 'NCPUS', 'ElapsedRaw'
 
 # ---- END OF COMPILE-TIME SETUP -----
 
@@ -114,7 +108,7 @@ def show_sbill_usage():
     print("  Warning: -T MUST be used for correctness when doing a net utilization report")
     print("")
     print("JOB DISPLAY/OUTPUT OPTIONS:")
-    print("  -l, --long                        display the jobs in SBILL long format")    
+    print("  -l, --long                        display the jobs in SBILL long format")
     print("  -o, --format=<field,...>          list of fields to be displayed where... ")
     print("                                     = Column width can be fixed by using")
     print("                                       <field>%<width>")
@@ -135,6 +129,7 @@ def show_sbill_usage():
     print("      --sum-by-account              display sum(s) of the filtered jobs by account")
     print("      --sum-by-user                 display sum(s) of the filtered jobs by user")
     print("      --sumby[xxx]                  various aliases of --sum-by-xxx")
+    print("                                    where xxx must be either account or user")
     print("")
     print("      --noconvert                   display without converting unit (KMGTP)")
     print("      --units=[KMGTP]               display values in the specified unit type")
@@ -151,7 +146,7 @@ def show_sbill_usage():
     #print("  --other_sacct_opts=(SLURM SACCT OPTIONS)     append other slurm sacct options, please use with caution")
     #print("")
     #
-    # --long conflicts with --format --> latest take effect 
+    # --long conflicts with --format --> latest take effect
     # --allusers conflicts with --user= --> latest take effect
 
 
@@ -181,7 +176,7 @@ is_show_total_SU = True
 sum_by = []
 csv_outfile = ''
 csv_delimiter = ","
-slurm_mem_unit = None
+slurm_mem_unit = "G"
 is_show_only_summary = False
 has_account_filter = False
 trim_jobtime = False
@@ -274,7 +269,7 @@ while i < len(argv) :
     except IndexError :
         print('Invalid input argument in -N, --nnodes option :: The number of nodes was NOT given.')
         exit(1)
-    if i != j : 
+    if i != j :
         if slurm_filter_opts[-2] == '-N' :
             slurm_filter_opts[-2] = '--nnodes'
         elif slurm_filter_opts[-1].startswith('-N') :
@@ -295,7 +290,7 @@ while i < len(argv) :
     except IndexError :
         print('Invalid input argument in -w, --nodelist option :: List of nodes was NOT given.')
         exit(1)
-    if i != j : 
+    if i != j :
         if slurm_filter_opts[-2] == '-w' :
             slurm_filter_opts[-2] = '--nodelist'
         elif slurm_filter_opts[-1].startswith('-w') :
@@ -311,7 +306,7 @@ while i < len(argv) :
     if i != j :
         if slurm_filter_opts[-2] == '-p' :
             slurm_filter_opts[-2] = '--partition'
-        elif slurm_filter_opts[-1].startswith('-p') : 
+        elif slurm_filter_opts[-1].startswith('-p') :
             slurm_filter_opts[-1] = '--partition=' + slurm_filter_opts[-1][2:]
         continue
 
@@ -651,7 +646,7 @@ while i < len(argv) :
     elif len(temp_opt) == 1 :
         if temp_opt[0].startswith('--units=') :
             slurm_other_format_opts.append(temp_opt[0][:9])
-            slurm_mem_unit = temp_opt[0][8] 
+            slurm_mem_unit = temp_opt[0][8]
         else:
             print('Invalid input argument in --units option :: Ambiguous inputs, please explicitly use --units=[KMGTP].')
             exit(1)
@@ -665,6 +660,7 @@ while i < len(argv) :
         print('-> For',__HPC__)
         print('-> Using', slurm, end='')
         print('-> Accounting start on',SLURM_STARTDATE)
+        print(AdminNoteMessage)
         exit(0)
 
     if argv[i] == '-h' or argv[i] == '--help' :
@@ -672,10 +668,15 @@ while i < len(argv) :
         exit(0)
 
     if argv[i] == '--helpformat' :
-        sacctformat = str(check_output(['sacct','--helpformat']).decode('ascii'))
         print("")
         print("--- Fields available from SLURM ---")
-        print(sacctformat)
+        num = 0
+        for field in sacct_all_format_opts :
+            print('{:<20}'.format(field), end="")
+            num += 1
+            if num % 4 == 0 :
+                print("")
+        print("\n")
         print("--- Fields available from SBILL ---")
         print('{:<20}'.format(Service), end="")
         print('{:<20}'.format(BillingUnit), end="")
@@ -706,7 +707,13 @@ while i < len(argv) :
 # Check input options
 if has_starttime_filter and has_endtime_filter and is_show_only_summary :
     print('sbill: note: Using --summary with both --starttime and --endtime will implicitly set --truncate (--trim).\n')
-    slurm_filter_opts.append('--truncate')
+    isAlreadyIn = False
+    for topt in ['-T','--trim','--trim-jobtime','--truncate'] :
+        if topt in slurm_filter_opts :
+            isAlreadyIn = True
+    if not isAlreadyIn :
+        slurm_filter_opts.append('--truncate')
+    trim_jobtime = True
 
 
 # ------  Functions to get data from SLURM ------
@@ -847,7 +854,7 @@ if isRestricted :
 #           (Tinkering user's input is troublesome)
 if isRestricted :
     if not has_account_filter :
-        slurm_extra_account_filter = '-A ' + ','.join(assoc)
+        slurm_extra_account_filter = '--accounts=' + ','.join(assoc)
         slurm_other_sacct_opts.append(slurm_extra_account_filter)
 
 # Parse AllocTres

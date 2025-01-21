@@ -51,8 +51,8 @@ AdminAccounts = ['admin']     # Admin account to grant special permission even w
 # - SBILL restrict feature is provided as an additional guard on top of 'PrivateData',
 #   since 'Service' is more sensitive information <--> 'billing' is hidden in SACCT AllocTres
 
-SLURM_STARTDATE  = '2025-01-17T00:00:00'     # SACCT/Slurm accounting start date
-AdminNoteMessage = 'Messages or notes from system admins'   # Message to be displayed when --version is invoked
+SLURM_STARTDATE  = '2025-01-21T00:00:00'     # SACCT/Slurm accounting start date 
+AdminNoteMessage = 'IMPORTANT: XXX'   # Message to be displayed when --version is invoked
 
 sacct_all_format_opts = ['Account', 'AdminComment', 'AllocCPUS', 'AllocNodes', 'AllocTRES', 'AssocID',
         'Cluster', 'Comment', 'Constraints', 'ConsumedEnergy', 'ConsumedEnergyRaw', 'Container', 'CPUTime', 'CPUTimeRAW',
@@ -65,6 +65,7 @@ sacct_all_format_opts = ['Account', 'AdminComment', 'AllocCPUS', 'AllocNodes', '
         'UID', 'User', 'UserCPU', 'WCKey', 'WCKeyID', 'WorkDir']
 
 # ---- END OF COMPILE-TIME SETUP -----
+
 
 def show_sbill_usage():
     print("Usage: sbill [OPTIONS(0)...]")
@@ -90,15 +91,15 @@ def show_sbill_usage():
     print("  -G, --ngpus=<num> or <min-max>    jobs that use the specified number of GPUs")
     print("")
     print("      --state=<job_state,...>       jobs that are marked with these state(s)")
-    print("      --runtime=<min[-max:unit]>    jobs that have runtime within the range,")
+    print("      --runtime=<min[-max[:unit]]>  jobs that have runtime within the range,")
     print("                                    where unit is \'sec\', \'min\', or \'hr\'")
-    print("      --range=<min[-max]>           jobs charged within the specified "+Service+" range")
+    print("      --range=<min[-max]>           jobs charged within the specified '"+Service+"' range")
     print("")
     print("  -E, --endtime=<time>              jobs that start before this time point")
     print("                                      Default: now")
     print("  -S, --starttime=<time>            jobs that end after this time point")
     print("                                      Default: today at 00:00:00")    
-    print("                                    where <time> format is...                 ")
+    print("                                    where the format of <time> is...          ")
     print("                                      YYYY-MM-DD[THH:MM[:SS]] or              ")
     print("                                      MM/DD[/YY]-HH:MM[:SS] or                ")
     print("                                      MMDD[YY] or MM/DD[/YY] or MM.DD[.YY] or ")
@@ -161,7 +162,7 @@ def show_trim_explanation():
     print("")
     print("  -T, --trim, --truncate (slurm)    trim job runtime by trunicating start/end time")
     print("                                    according to -S, -E options")
-    print("  Warning: When using -S and -E to get a net utilization report during an interval,")
+    print("  Warning: When using -S and -E to get a net utilization within a time window,")
     print("           -T MUST be used for correctness.")
     print("  Note: -T takes no effect when neither -S nor -E is specified")
     print("")
@@ -169,7 +170,7 @@ def show_trim_explanation():
     print("")
     print("    According to the definitions of -S,--starttime and -E,--endtime options, if any")
     print("  part of a job was active within the time window (no matter how short), then")
-    print("  the entire job will be queried and included in subsequent calculations.")
+    print("  the entire job will be included and get involved in subsequent calculations.")
     print("")
     print("              starttime           endtime              ")
     print("                  |                  |                 ")
@@ -180,10 +181,10 @@ def show_trim_explanation():
     print("  Job 5: -------                               Excluded")
     print("  Job 6:                                ----   Excluded")
     print("")
-    print("    This causes the results of 'Total SHr spent' and other net usages, when using")
+    print("    This causes the results of 'Total "+Service+" spent' and other net usages, when using")
     print("  together with -S or -E option, to be ambiguous.")
     print("")
-    print("    By adding -T, --trim or --truncate, the queried jobs' runtime will be trimmed")
+    print("    By adding -T, --trim or --truncate, the jobs' runtime will be further trimmed")
     print("  by truncating their starttime and endtime at the time points specified by")
     print("  -S, -E options.")
     print("")
@@ -196,10 +197,10 @@ def show_trim_explanation():
     print("  Job 5: -------  |                  |         Excluded")
     print("  Job 6:          |                  |  ----   Excluded")
     print("")
-    print("    The values of 'Total SHr spent' and other net usages are now as it should be.")
+    print("    The values of 'Total "+Service+" spent' and other net usages are now as it should be.")
     print("")
-    print("    In contrast, by using -T, users must be aware that 'SHr', 'Elapsed' and some")
-    print("  other fields of each job record/row will come from a portion of the job instead. ")
+    print("    In contrast, by using -T, users must be reminded that '"+Service+"', 'Elapsed' and")
+    print("  some other fields of each job row could come from a portion of the job. ")
     print("")
 
 
@@ -322,7 +323,7 @@ while i < len(argv) :
     except IndexError :
         print('Invalid input argument in -N, --nnodes option :: The number of nodes was NOT given.')
         exit(1)
-    if i != j :
+    if i != j : 
         if slurm_filter_opts[-2] == '-N' :
             slurm_filter_opts[-2] = '--nnodes'
         elif slurm_filter_opts[-1].startswith('-N') :
@@ -343,7 +344,7 @@ while i < len(argv) :
     except IndexError :
         print('Invalid input argument in -w, --nodelist option :: List of nodes was NOT given.')
         exit(1)
-    if i != j :
+    if i != j : 
         if slurm_filter_opts[-2] == '-w' :
             slurm_filter_opts[-2] = '--nodelist'
         elif slurm_filter_opts[-1].startswith('-w') :
@@ -359,7 +360,7 @@ while i < len(argv) :
     if i != j :
         if slurm_filter_opts[-2] == '-p' :
             slurm_filter_opts[-2] = '--partition'
-        elif slurm_filter_opts[-1].startswith('-p') :
+        elif slurm_filter_opts[-1].startswith('-p') : 
             slurm_filter_opts[-1] = '--partition=' + slurm_filter_opts[-1][2:]
         continue
 
@@ -692,8 +693,8 @@ while i < len(argv) :
 
     i = parse_filter_opts(i,'','--noconvert', has_argv=False, var=slurm_other_format_opts)
     if i != j : 
-      slurm_mem_unit = None
-      continue
+        slurm_mem_unit = None
+        continue
 
     try:
         i = parse_filter_opts(i,'','--units', has_argv=True, var=temp_opt)
@@ -706,7 +707,7 @@ while i < len(argv) :
     elif len(temp_opt) == 1 :
         if temp_opt[0].startswith('--units=') :
             slurm_other_format_opts.append(temp_opt[0][:9])
-            slurm_mem_unit = temp_opt[0][8]
+            slurm_mem_unit = temp_opt[0][8] 
         else:
             print('Invalid input argument in --units option :: Ambiguous inputs, please explicitly use --units=[KMGTP].')
             exit(1)
@@ -734,10 +735,10 @@ while i < len(argv) :
     if argv[i] == '--helpformat' :
         print("")
         print("--- Fields available from SLURM ---")
-        num = 0
+        num = 0 
         for field in sacct_all_format_opts :
             print('{:<20}'.format(field), end="")
-            num += 1
+            num += 1 
             if num % 4 == 0 :
                 print("")
         print("\n")
@@ -776,7 +777,7 @@ if has_starttime_filter and has_endtime_filter and is_show_only_summary :
         if topt in slurm_filter_opts :
             isAlreadyIn = True
     if not isAlreadyIn :
-        slurm_filter_opts.append('--truncate')
+        slurm_filter_opts.append('--truncate')    
     trim_jobtime = True
 
 

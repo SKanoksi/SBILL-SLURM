@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# SBILL version 1.5.0-RC4
+# SBILL version 1.5.0-RC5
 #
 # Query SLURM billing per job through SLURM sacct command
 #
@@ -15,7 +15,7 @@
 
 # ---- START OF COMPILE-TIME SETUP -----
 
-__version__ = '1.5.0-RC4 (17-Jan-2025)'
+__version__ = '1.5.0-RC5 (21-Jan-2025)'
 __HPC__ = 'XXX HPC of XXX center'
 
 # Set up
@@ -66,7 +66,6 @@ sacct_all_format_opts = ['Account', 'AdminComment', 'AllocCPUS', 'AllocNodes', '
 
 # ---- END OF COMPILE-TIME SETUP -----
 
-
 def show_sbill_usage():
     print("Usage: sbill [OPTIONS(0)...]")
     print("")
@@ -96,19 +95,23 @@ def show_sbill_usage():
     print("      --range=<min[-max]>           jobs charged within the specified "+Service+" range")
     print("")
     print("  -E, --endtime=<time>              jobs that start before this time point")
+    print("                                      Default: now")
     print("  -S, --starttime=<time>            jobs that end after this time point")
-    print("                                      Default: Today at 00:00:00")
+    print("                                      Default: today at 00:00:00")    
+    print("                                    where <time> format is...                 ")
+    print("                                      YYYY-MM-DD[THH:MM[:SS]] or              ")
+    print("                                      MM/DD[/YY]-HH:MM[:SS] or                ")
+    print("                                      MMDD[YY] or MM/DD[/YY] or MM.DD[.YY] or ")
+    print("                                      now[{+|-}count[second|minute|hour|day|week]]")
+    print("  Warning: When using -S and -E to get a net utilization within a time window,")
+    print("           -T MUST be used for correctness.")
+    print("")
     print("  -T, --trim, --truncate (slurm)    trim job runtime by trunicating start/end time")
     print("                                    according to -S, -E options")
-    print("  Note: time format is...                      ")
-    print("             YYYY-MM-DD[THH:MM[:SS]] or              ")
-    print("             MM/DD[/YY]-HH:MM[:SS] or                ")
-    print("             MMDD[YY] or MM/DD[/YY] or MM.DD[.YY] or ")
-    print("             now[{+|-}count[seconds(default)|minutes|hours|days|weeks]]")
-    print("  Warning: -T MUST be used for correctness when doing a net utilization report")
+    print("      --helptrim, --helptruncate    detailed explanation regarding -T, --trim")
     print("")
     print("JOB DISPLAY/OUTPUT OPTIONS:")
-    print("  -l, --long                        display the jobs in SBILL long format")
+    print("  -l, --long                        display the jobs in SBILL long format")    
     print("  -o, --format=<field,...>          list of fields to be displayed where... ")
     print("                                     = Column width can be fixed by using")
     print("                                       <field>%<width>")
@@ -119,6 +122,10 @@ def show_sbill_usage():
     print("                                       -o default,start,end")
     print("      --helpformat                  display all available fields, then exit")
     print("")
+    # Simple quick histogram 
+    # --> to get a nicer bin range in x-axis
+    #     with y-axis other than number of jobs (i.e., Service) [Those meaningful when get summed]
+    # --> issue sbill iteratively for each of your desired bin range --> Manually plot in ...
     print("  -H, --histogram=<nbin>[:field]    display text-based histogram of the jobs")
     print("                                    where field is "+Service+", "+BillingUnit+",")
     print("                                                   NNode, NCPU, NGPU,")
@@ -131,9 +138,9 @@ def show_sbill_usage():
     print("      --sumby[xxx]                  various aliases of --sum-by-xxx")
     print("                                    where xxx must be either account or user")
     print("")
-    print("      --noconvert                   display without converting unit (KMGTP)")
+    print("      --noconvert                   display without converting unit")
     print("      --units=[KMGTP]               display values in the specified unit type")
-    print("                                    (override --noconvert)")
+    print("                                      Default: G (GB)")
     print("")
     print("      --to_csv=<filename>           save job records in CSV format to <filename>")
     print("      --csv_sep=<character>         separator/delimiter for --to_csv option")
@@ -146,8 +153,54 @@ def show_sbill_usage():
     #print("  --other_sacct_opts=(SLURM SACCT OPTIONS)     append other slurm sacct options, please use with caution")
     #print("")
     #
-    # --long conflicts with --format --> latest take effect
+    # --long conflicts with --format --> latest take effect 
     # --allusers conflicts with --user= --> latest take effect
+
+
+def show_trim_explanation():
+    print("")
+    print("  -T, --trim, --truncate (slurm)    trim job runtime by trunicating start/end time")
+    print("                                    according to -S, -E options")
+    print("  Warning: When using -S and -E to get a net utilization report during an interval,")
+    print("           -T MUST be used for correctness.")
+    print("  Note: -T takes no effect when neither -S nor -E is specified")
+    print("")
+    print("  ### Explanation ###")
+    print("")
+    print("    According to the definitions of -S,--starttime and -E,--endtime options, if any")
+    print("  part of a job was active within the time window (no matter how short), then")
+    print("  the entire job will be queried and included in subsequent calculations.")
+    print("")
+    print("              starttime           endtime              ")
+    print("                  |                  |                 ")
+    print("  Job 1:            ===============            Included")
+    print("  Job 2:                    ================   Included")
+    print("  Job 3:     ==========                        Included")
+    print("  Job 4:    =============================      Included")
+    print("  Job 5: -------                               Excluded")
+    print("  Job 6:                                ----   Excluded")
+    print("")
+    print("    This causes the results of 'Total SHr spent' and other net usages, when using")
+    print("  together with -S or -E option, to be ambiguous.")
+    print("")
+    print("    By adding -T, --trim or --truncate, the queried jobs' runtime will be trimmed")
+    print("  by truncating their starttime and endtime at the time points specified by")
+    print("  -S, -E options.")
+    print("")
+    print("              starttime           endtime              ")
+    print("                  |                  |                 ")
+    print("  Job 1:          |  =============== |         Included")
+    print("  Job 2:          |          ========|------   Partially included")
+    print("  Job 3:     -----|====              |         Partially included")
+    print("  Job 4:    ------|==================|---      Partially included")
+    print("  Job 5: -------  |                  |         Excluded")
+    print("  Job 6:          |                  |  ----   Excluded")
+    print("")
+    print("    The values of 'Total SHr spent' and other net usages are now as it should be.")
+    print("")
+    print("    In contrast, by using -T, users must be aware that 'SHr', 'Elapsed' and some")
+    print("  other fields of each job record/row will come from a portion of the job instead. ")
+    print("")
 
 
 # ----- import libraries 1 -----
@@ -627,13 +680,20 @@ while i < len(argv) :
 
     # Other Slurm options
     if argv[i] == '-T' or argv[i] == '--trim' or argv[i] == '--trim-jobtime' or  argv[i] == '--truncate' :
-        slurm_filter_opts.append('--truncate')
+        isAlreadyIn = False
+        for topt in ['-T','--trim','--trim-jobtime','--truncate'] :
+            if topt in slurm_filter_opts :
+                isAlreadyIn = True
+        if not isAlreadyIn :
+            slurm_filter_opts.append('--truncate')
         trim_jobtime = True
         i += 1
         continue
 
     i = parse_filter_opts(i,'','--noconvert', has_argv=False, var=slurm_other_format_opts)
-    if i != j : continue ;
+    if i != j : 
+      slurm_mem_unit = None
+      continue
 
     try:
         i = parse_filter_opts(i,'','--units', has_argv=True, var=temp_opt)
@@ -667,6 +727,10 @@ while i < len(argv) :
         show_sbill_usage()
         exit(0)
 
+    if argv[i] == '--helptrim' or argv[i] == '--helptruncate' :
+        show_trim_explanation()
+        exit(0)
+
     if argv[i] == '--helpformat' :
         print("")
         print("--- Fields available from SLURM ---")
@@ -689,7 +753,7 @@ while i < len(argv) :
         print("")
         print("Note: ")
         print("1) "+CPUusage+" and "+GPUusage+" are of allocation.")
-        print("2) "+BillingUnit+", AllocRAM and Billing are available after the job starts.")
+        print("2) "+BillingUnit+", AllocRAM and Billing are only available after the job starts.")
         print("3) \'Default\' field is equal to \'"+','.join(GLOBAL_SBILL_DEFAULT_FORMAT)+"\'\n")
         exit(0)
 

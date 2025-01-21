@@ -1,5 +1,5 @@
 # SBILL-SLURM
-Query SLURM billing per job through SLURM sacct command
+Query SLURM job billing and information -- a wrapper of SLURM SACCT command
 
 SBILL version:
 1.5.0-RC5 (21 January 2025)

@@ -91,6 +91,6 @@ OTHERS:
 
 ```
 
-| Example:|
+| Example: sbill --long xxx|
 | :-----------------: |
-| ![](Example.png) |
+| ![](Example_long.png) |

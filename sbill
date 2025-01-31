@@ -330,11 +330,12 @@ while i < len(argv) :
         print('Invalid input argument in -N, --nnodes option :: The number of nodes was NOT given.')
         exit(1)
     if i != j :
-        if slurm_filter_opts[-2] == '-N' :
-            slurm_filter_opts[-2] = '--nnodes'
-        elif slurm_filter_opts[-1].startswith('-N') :
+        if slurm_filter_opts[-1].startswith('-N') :
             slurm_filter_opts[-1] = '--nnodes=' + slurm_filter_opts[-1][2:]
+        elif len(slurm_filter_opts) >1 and slurm_filter_opts[-2] == '-N' :
+            slurm_filter_opts[-2] = '--nnodes'
         continue
+
 
     # *** There seem to be a bug in this SACCT option, when the job contains GPUs ***
     #     --> Implement this ourself

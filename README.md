@@ -2,7 +2,7 @@
 Query SLURM job billing and information -- a wrapper of SLURM SACCT command
 
 SBILL version:
-1.5.0-RC6 (23 January 2025)
+1.5.1 (12 March 2025)
 
 Dependencies:
 + python (>=3.1.0)  -- subprocess, math, os, sys, str.format

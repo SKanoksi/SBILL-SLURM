@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# SBILL version 1.5.0-RC6
+# SBILL version 1.5.1
 #
 # Query SLURM billing per job through SLURM sacct command
 #
@@ -15,7 +15,7 @@
 
 # ---- START OF COMPILE-TIME SETUP -----
 
-__version__ = '1.5.0-RC6 (23-Jan-2025)'
+__version__ = '1.5.1 (12-March-2025)'
 __HPC__ = 'XXX HPC of XXX center'
 
 # Set up
@@ -51,7 +51,7 @@ AdminAccounts = ['admin']     # Admin account to grant special permission even w
 # - SBILL restrict feature is provided as an additional guard on top of 'PrivateData',
 #   since 'Service' is more sensitive information <--> 'billing' is hidden in SACCT AllocTres
 
-SLURM_STARTDATE  = '2025-01-23T00:00:00'     # SACCT/Slurm accounting start date
+SLURM_STARTDATE  = '2025-03-12T00:00:00'     # SACCT/Slurm accounting start date
 AdminNoteMessage = 'IMPORTANT: XXX'   # Message to be displayed when --version is invoked
 
 sacct_all_format_opts = ['Account', 'AdminComment', 'AllocCPUS', 'AllocNodes', 'AllocTRES', 'AssocID',
@@ -141,7 +141,7 @@ def show_sbill_usage():
     print("")
     print("      --noconvert                   display without converting unit")
     print("      --units=[KMGTP]               display values in the specified unit type")
-    print("                                      Default: G (GB)")
+    print("                                      Default: G (GiB)")
     # Hidden feature:  --units=G%3   --> 3 decimal places but for AllocRAM only
     print("")
     print("      --to_csv=<filename>           save job records in CSV format to <filename>")
@@ -335,7 +335,6 @@ while i < len(argv) :
         elif len(slurm_filter_opts) >1 and slurm_filter_opts[-2] == '-N' :
             slurm_filter_opts[-2] = '--nnodes'
         continue
-
 
     # *** There seem to be a bug in this SACCT option, when the job contains GPUs ***
     #     --> Implement this ourself
@@ -815,282 +814,7 @@ if has_starttime_filter and has_endtime_filter and is_show_only_summary :
     trim_jobtime = True
 
 
-# ------  Functions to get data from SLURM ------
-
-def get_tres(string, key, ReturnInt=True):
-    start = string.find(key)
-    if start == -1 :
-        return 0
-    else:
-        start += len(key)
-        end = string.find(',', start)
-        if ReturnInt :
-           return int(string[start:end])
-        else:
-           return string[start:end]
-
-
-def parse_alloctres(datain, key, default_charperline=150):
-
-    nrow = datain.count('\n')
-    dataout = {}
-    for k in key :
-        dataout[k] = [0]*nrow
-
-    if nrow == 0 :
-        return dataout
-
-    start = 0
-    for i in range(nrow):
-        charperline = default_charperline
-        end = datain.find("\n", start, start+charperline)
-        while end == -1 :
-            charperline += 100
-            end = datain.find("\n", start, start+charperline)
-        temp = datain[start:end]
-
-        for k in key :
-            if k == 'mem' :
-                dataout[k][i] = get_tres(temp, k + '=', ReturnInt=False)
-            else:
-                dataout[k][i] = get_tres(temp, k + '=')
-
-        start = end + 1
-
-    return dataout
-
-
-def parse_sacct(datain, key, sep, default_charperline=150):
-
-    nrow    = datain.count('\n')
-    ncol    = len(key)
-    dataout = {}
-    for k in key :
-        dataout[k] = [None]*nrow
-
-    if nrow == 0 :
-        return dataout
-
-    start = 0
-    for i in range(nrow):
-        charperline = default_charperline
-        end = datain.find("\n", start, start+charperline)
-        while end == -1 :
-            charperline += 100
-            end = datain.find("\n", start, start+charperline)
-        temp = datain[start:end]
-
-        markL = 0
-        markR = temp.find(sep, markL)
-        for k in key :
-            dataout[k][i] = temp[markL:markR]
-            markL = markR+1
-            markR = temp.find(sep, markL)
-
-        start = end + 1
-
-    return dataout
-
-
-def parse_sacctmgr(datain, default_charperline=150):
-
-    nrow    = datain.count('\n')
-    dataout = [None]*nrow
-
-    if nrow == 0 :
-        return dataout
-
-    start = 0
-    for i in range(nrow):
-        charperline = default_charperline
-        end = datain.find("\n", start, start+charperline)
-        while end == -1 :
-            charperline += 100
-            end = datain.find("\n", start, start+charperline)
-        dataout[i] = datain[start:end]
-
-        start = end + 1
-
-    return dataout
-
-
-def data_from_sacct(sacct_opts, columns, sep='|', isAllocTres=False):
-    try:
-        data = check_output(['sacct'] + sacct_opts, shell=False)
-    except CalledProcessError :
-        print('sbill: error: Non-zero return code from SLRUM accounting service.')
-        print(sacct_opts)
-        exit(1)
-    else:
-        if isAllocTres:
-            return parse_alloctres(data.decode('utf-8'), columns)
-        else:
-            return parse_sacct(data.decode('utf-8'), columns, sep)
-
-
-def AssocAccount_from_sacctmgr():
-    try:
-        data = check_output(['sacctmgr','show','assoc','-n','-P','format=qos'], shell=False)
-    except CalledProcessError :
-        print('sbill: error: Non-zero return code from sacctmgr command.')
-        exit(1)
-    else:
-        data = parse_sacctmgr(data.decode('utf-8'))
-
-    return data[1:]
-
-
-# ------------ Main computation  ------------
-
-# Get associated accounts and check for Admin accounts
-assoc = list(dict.fromkeys( AssocAccount_from_sacctmgr() )) # Remove duplicates
-if isRestricted :
-    for admin_acc in AdminAccounts :
-        if admin_acc in assoc :
-            isRestricted = False
-# Only show jobs submitted using associated accounts (First guard) = Not enough
-# Strength: Fast, because query less
-# Weakness: Won't work when users specify non-associated accounts directly using -A
-#           (Tinkering user's input is troublesome)
-if isRestricted :
-    if not has_account_filter :
-        slurm_extra_account_filter = '--accounts=' + ','.join(assoc)
-        slurm_other_sacct_opts.append(slurm_extra_account_filter)
-
-# Parse AllocTres
-format_opts = ['--format=alloctres','-X','-p','--delimiter=,','--noheader']
-slurm_opts = format_opts + slurm_filter_opts + slurm_other_sacct_opts
-usage = data_from_sacct(slurm_opts, columns=Treskey.copy(), sep=None, isAllocTres=True)
-
-# Get other essential fields
-format_opts = '--format=jobid,account,ncpus,elapsedraw'
-col_names   = ['JobID','Account','NCPUS','ElapsedRaw']
-
-if len(state_selected) != 0 :
-    format_opts += ',state'
-    col_names   += ['State']
-if len(reservation_selected) != 0 :
-    format_opts += ',reservation'
-    col_names   += ['Reservation']
-
-format_opts = [format_opts,'-X','-p','--noheader']
-slurm_opts = format_opts + slurm_filter_opts + slurm_other_sacct_opts
-info = data_from_sacct(slurm_opts, columns=col_names, sep='|')
-
-# Merge together
-usage.update(info)
-
-
-# ---- SBILL filter
-
-def pop_usage(mask):
-    for k in list(usage.keys()):
-        iremain = -1
-        for i in range(len(mask)):
-            if mask[i] :
-                iremain += 1
-            else:
-                del usage[k][iremain+1]
-
-
-def filter_usage(Col, List):
-    nrow = len(usage['JobID'])
-    mask = [False]*nrow
-    for nr in range(nrow):
-        mask[nr] = usage[Col][nr].lower().startswith( tuple(k.lower() for k in List) )
-    pop_usage(mask)
-
-
-def filter_acct(Col, List):
-    nrow = len(usage['JobID'])
-    mask = [False]*nrow
-    any_removed = False
-    for nr in range(nrow):
-        if usage[Col][nr] in List :
-            mask[nr] = True
-        else:
-            any_removed = True
-    pop_usage(mask)
-    return any_removed
-
-
-# I. Account
-# Only show jobs submitted using associated accounts (Second guard)
-# Strength: Correct, No loop hole
-# Weakness: Slow
-remove_nonassoc = False
-if isRestricted :
-    remove_nonassoc = filter_acct('Account', assoc)
-
-
-# II. Reervation -- (Before = Filter more)
-if len(reservation_selected) != 0 :
-    filter_usage('Reservation', reservation_selected)
-# III. State -- (Later = Filter less)
-if len(state_selected) != 0 :
-    filter_usage('State', state_selected)
-
-
-# --- SBILL calculation
-
-# Compute Service and core-hour
-usage['ElapsedRaw'] = [ int(num) if num.isdigit() else 0 for num in usage['ElapsedRaw'] ]
-usage['NCPUS']  = [ int(num) for num in usage['NCPUS'] ]
-usage[Service]  = [ calService(b,s) for b,s in zip(usage[Treskey[0]],usage['ElapsedRaw']) ]
-usage[CPUusage] = [ calCPUusage(ncpu,s) for ncpu,s in zip(usage['NCPUS'],usage['ElapsedRaw']) ]
-usage[GPUusage] = [ calGPUusage(ngpu,s) for ngpu,s in zip(usage[Treskey[1]],usage['ElapsedRaw']) ]
-usage[BillingUnit] = [ calBillingUnit(b) for b in usage[Treskey[0]] ]
-
-# Filter range before sum and get other info
-if len(range_minmax) >= 1 :
-    if len(range_minmax) == 1 :
-        mask = [ range_minmax[0]<=value for value in usage[Service] ]
-    else:
-        mask = [ (range_minmax[0]<=value) & (value<range_minmax[1]) for value in usage[Service] ]
-    pop_usage(mask)
-
-if len(runtime_minmax) >= 1 :
-    if len(runtime_minmax) == 1 :
-        mask = [ runtime_to_sec*runtime_minmax[0]<=value for value in usage['ElapsedRaw'] ]
-    else:
-        mask = [ (runtime_to_sec*runtime_minmax[0]<=value) & (value<runtime_to_sec*runtime_minmax[1]) for value in usage['ElapsedRaw'] ]
-    pop_usage(mask)
-    if runtime_to_sec == 1 :
-        runtime_unit = 'second'
-    elif runtime_to_sec == 60 :
-        runtime_unit = 'minute'
-    else:
-        runtime_unit = 'hour'
-
-if len(range_ncpu_minmax) >= 2 :
-    mask = [ (range_ncpu_minmax[0]<=value) & (value<=range_ncpu_minmax[1]) for value in usage['NCPUS'] ]
-    pop_usage(mask)
-
-if len(range_ngpu_minmax) >= 2 :
-    if 'gpu' in Treskey[1] :
-        mask = [ (range_ngpu_minmax[0]<=value) & (value<=range_ngpu_minmax[1]) for value in usage[Treskey[1]] ]
-        pop_usage(mask)
-    else:
-        print('sbill: error: --ngpus is NOT supported for this cluster. Contact your system admin or remove it.')
-        exit(1)
-
-# If no jobs remain after being sorted out
-if len(usage['JobID']) == 0 :
-    if isRestricted :
-        print('*** No (associated) jobs to be displayed ***')
-        if remove_nonassoc :
-            print('= You can only see the jobs that are associated with your Slurm billing accounts')
-    else:
-        print('*** No jobs to be displayed ***')
-    exit(0)
-
-# Sum
-Total_SU_spent = sum( usage[Service] )
-Total_CPUusage_obtained = sum( usage[CPUusage] )
-Total_GPUusage_obtained = sum( usage[GPUusage] )
-
-
-# ------------ Format of extra fields ------------
+# ------------ Get fields ------------
 
 # Get format options
 if len(slurm_format_opts) == 0 :
@@ -1133,7 +857,7 @@ display_format_opts = slurm_format_opts.copy()   # Fields/Column names to be dis
 lower_format_opts = [ n.lower() for n in slurm_format_opts ]
 j = 0
 for i in range(len(lower_format_opts)):
-    # Sbill required fields
+    # Sbill fields
     if Service.lower() == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = Service
@@ -1152,66 +876,41 @@ for i in range(len(lower_format_opts)):
     elif 'allocram' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = 'AllocRAM'
-
-        # Convert Mem unit of AllocRAM
-        if slurm_mem_unit in ['K','M','G','T','P'] :
-            mem_unit_ratio = {'K': 1, 'M': 2, 'G': 3, 'T': 4, 'P': 5}
-
-            if slurm_mem_decimal == None :
-                if slurm_mem_unit == 'M' or slurm_mem_unit == 'K' :
-                    slurm_mem_decimal = 0
-                else:
-                    slurm_mem_decimal = 2
-            slurm_mem_format = '{:,.' + str(slurm_mem_decimal) + 'f}'
-
-            def convertMem(text, to_unit):
-                text = str(text)
-                if len(text) < 2 :
-                    return text
-                from_unit = text[-1]
-                value = float(text[:-1])
-                value *= pow(1024, mem_unit_ratio[from_unit] - mem_unit_ratio[to_unit])
-                return slurm_mem_format.format(value) + to_unit
-
-            usage[Treskey[2]] = [ convertMem(m,slurm_mem_unit) for m in usage[Treskey[2]] ]
-
     elif 'billing' == lower_format_opts[i] :
         sacct_format_opts.pop(j)
         display_format_opts[i] = 'Billing'
-    elif 'account' == lower_format_opts[i] :
-        sacct_format_opts.pop(j)
-        display_format_opts[i] = 'Account'
-    elif 'state' == lower_format_opts[i] :
-        if len(state_selected) != 0 :
-            sacct_format_opts.pop(j)
-        else:
-            sacct_format_opts[j] = 'State'
-            j += 1
-        display_format_opts[i] = 'State'
-    elif 'reservation' == lower_format_opts[i] :
-        if len(reservation_selected) != 0 :
-            sacct_format_opts.pop(j)
-        else:
-            sacct_format_opts[j] = 'Reservation'
-            j += 1
-        display_format_opts[i] = 'Reservation'
-    elif 'ncpus' == lower_format_opts[i] :
-        sacct_format_opts.pop(j)
-        display_format_opts[i] = 'NCPUS'
-    elif 'elapsedraw' == lower_format_opts[i] :
-        sacct_format_opts.pop(j)
-        display_format_opts[i] = 'ElapsedRaw'
 
     # (Possible) Misspelled/Hidden options
+    elif 'state' == lower_format_opts[i] :
+        sacct_format_opts[j]   = 'State'
+        display_format_opts[i] = 'State'
+        j += 1
+    elif 'reservation' == lower_format_opts[i] :
+        sacct_format_opts[j]   = 'Reservation'
+        display_format_opts[i] = 'Reservation'
+        j += 1
+    elif 'account' == lower_format_opts[i] :
+        sacct_format_opts[j]   = 'Account'
+        display_format_opts[i] = 'Account'
+        j += 1
+    elif 'ncpus' == lower_format_opts[i] :
+        sacct_format_opts[j]   = 'NCPUS'
+        display_format_opts[i] = 'NCPUS'
+        j += 1
+    elif 'elapsedraw' == lower_format_opts[i] :
+        sacct_format_opts[j]   = 'ElapsedRaw'
+        display_format_opts[i] = 'ElapsedRaw'
+        j += 1
     elif 'elapse' == lower_format_opts[i] :
         sacct_format_opts[j]   = 'Elapsed'
         display_format_opts[i] = 'Elapsed'
         print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
         j += 1
     elif 'elapseraw' == lower_format_opts[i] :
-        sacct_format_opts.pop(j)
+        sacct_format_opts[j]   = 'ElapsedRaw'
         display_format_opts[i] = 'ElapsedRaw'
         print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        j += 1
     elif 'node' == lower_format_opts[i] :
         sacct_format_opts[j]   = 'NodeList'
         display_format_opts[i] = 'NodeList'
@@ -1223,26 +922,30 @@ for i in range(len(lower_format_opts)):
         print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
         j += 1
     elif 'ncpu' == lower_format_opts[i] :
-        sacct_format_opts.pop(j)
+        sacct_format_opts[j]   = 'NCPUS'
         display_format_opts[i] = 'NCPUS'
         print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        j += 1
     elif 'cpus' == lower_format_opts[i] :
-        sacct_format_opts.pop(j)
+        sacct_format_opts[j]   = 'NCPUS'
         display_format_opts[i] = 'NCPUS'
         print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        j += 1
     elif 'cpu' == lower_format_opts[i] :
         sacct_format_opts[j]   = 'CPUTime'
         display_format_opts[i] = 'CPUTime'
         print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
         j += 1
     elif 'ngpu' == lower_format_opts[i] :
-        sacct_format_opts.pop(j)
+        sacct_format_opts[j]   = 'NGPUS'
         display_format_opts[i] = 'NGPUS'
         print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        j += 1
     elif 'gpus' == lower_format_opts[i] :
-        sacct_format_opts.pop(j)
+        sacct_format_opts[j]   = 'NGPUS'
         display_format_opts[i] = 'NGPUS'
         print('sbill: note: Undocumented field \''+slurm_format_opts[i]+'\' used in --format= option. Change to \''+display_format_opts[i]+'\'.')
+        j += 1
 
     # SLURM fields
     else:
@@ -1256,49 +959,289 @@ for i in range(len(lower_format_opts)):
         j += 1
 
 
-# Forcefully add required fields
-if not 'JobID' in sacct_format_opts :
-    sacct_format_opts.append('JobID')
+# Add extra required fields
+#if not 'JobID' in sacct_format_opts :
+#    sacct_format_opts.append('JobID')
+if not 'Account' in sacct_format_opts :
+    sacct_format_opts.append('Account')
+if not 'NCPUS' in sacct_format_opts :
+    sacct_format_opts.append('NCPUS')
+if not 'ElapsedRaw' in sacct_format_opts :
+    sacct_format_opts.append('ElapsedRaw')
+if len(state_selected) != 0 and not 'State' in sacct_format_opts :
+    sacct_format_opts.append('State')
+if len(reservation_selected) != 0 and not 'Reservation' in sacct_format_opts :
+    sacct_format_opts.append('Reservation')
 if sum_by == 'User' and not 'User' in sacct_format_opts :
     sacct_format_opts.append('User')
-if field_histogram.lower() in ['nnode','nodes','nnodes','node'] :
-    if not 'NNodes' in sacct_format_opts :
-        sacct_format_opts.append('NNodes')
+if field_histogram.lower() in ['nnode','nodes','nnodes','node'] and not 'NNodes' in sacct_format_opts :
+    sacct_format_opts.append('NNodes')
+
+
+# ------  Functions to get data from SLURM ------
+
+def get_tres(string, key, ReturnInt=True):
+    start = string.find(key)
+    if start == -1 :
+        return 0
+    else:
+        start += len(key)
+        end = string.find(',', start)
+        if ReturnInt :
+           return int(string[start:end])
+        else:
+           return string[start:end]
+
+
+def parse_sacct(datain, tres, key, sep, default_charperline=150):
+
+    nrow    = datain.count('\n')
+    columns = tres + key
+    ncol    = len(columns)
+    dataout = {}
+    for c in columns :
+        dataout[c] = [None]*nrow
+
+    if nrow == 0 :
+        return dataout
+
+    start = 0
+    for i in range(nrow):
+        charperline = default_charperline
+        end = datain.find("\n", start, start+charperline)
+        while end == -1 :
+            charperline += 100
+            end = datain.find("\n", start, start+charperline)
+        temp = datain[start:end]
+
+        markL = 0
+        markR = temp.find(sep, markL)
+        # First is alloctres
+        for t in tres :
+            if t == 'mem' :
+                dataout[t][i] = get_tres(temp[markL:markR], t + '=', ReturnInt=False)
+            else:
+                dataout[t][i] = get_tres(temp[markL:markR], t + '=', ReturnInt=True)
+        markL = markR+1
+        markR = temp.find(sep, markL)
+        # Others are fields
+        for k in key :
+            dataout[k][i] = temp[markL:markR]
+            markL = markR+1
+            markR = temp.find(sep, markL)
+
+        start = end + 1
+
+    return dataout
+
+
+def parse_sacctmgr(datain, default_charperline=150):
+
+    nrow    = datain.count('\n')
+    dataout = [None]*nrow
+
+    if nrow == 0 :
+        return dataout
+
+    start = 0
+    for i in range(nrow):
+        charperline = default_charperline
+        end = datain.find("\n", start, start+charperline)
+        while end == -1 :
+            charperline += 100
+            end = datain.find("\n", start, start+charperline)
+        dataout[i] = datain[start:end]
+
+        start = end + 1
+
+    return dataout
+
+
+def data_from_sacct(sacct_opts, tres_columns, field_columns, sep='|'):
+    try:
+        data = check_output(['sacct'] + sacct_opts, shell=False)
+    except CalledProcessError :
+        print('sbill: error: Non-zero return code from SLRUM accounting service.')
+        print(sacct_opts)
+        exit(1)
+    else:
+        return parse_sacct(data.decode('utf-8'), tres_columns, field_columns, sep)
+
+
+def AssocAccount_from_sacctmgr():
+    try:
+        data = check_output(['sacctmgr','show','assoc','-n','-P','format=qos'], shell=False)
+    except CalledProcessError :
+        print('sbill: error: Non-zero return code from sacctmgr command.')
+        exit(1)
+    else:
+        data = parse_sacctmgr(data.decode('utf-8'))
+
+    return data[1:]
+
+
+# ------------ Main program  ------------
+
+# Get associated accounts and check for Admin accounts
+assoc = list(dict.fromkeys( AssocAccount_from_sacctmgr() )) # Remove duplicates
+if isRestricted :
+    for admin_acc in AdminAccounts :
+        if admin_acc in assoc :
+            isRestricted = False
+# Only show jobs submitted using associated accounts (First guard) = Not enough
+# Strength: Fast, because query less
+# Weakness: Won't work when users specify non-associated accounts directly using -A
+#           (Tinkering user's input is troublesome)
+if isRestricted :
+    if not has_account_filter :
+        slurm_extra_account_filter = '--accounts=' + ','.join(assoc)
+        slurm_other_sacct_opts.append(slurm_extra_account_filter)
 
 
 # ---- SBILL inquiry SACCT for additional fields
 
-format_opts = ['--format=' + ','.join(sacct_format_opts),'-X','-p','--delimiter=\\','--noheader']
+format_opts = ['--format=alloctres,' + ','.join(sacct_format_opts),'-X','-p','--delimiter=\\','--noheader']
 slurm_opts = format_opts + slurm_other_format_opts + slurm_filter_opts + slurm_other_sacct_opts
-info = data_from_sacct(slurm_opts, columns=sacct_format_opts, sep='\\')
+usage = data_from_sacct(slurm_opts, tres_columns=Treskey, field_columns=sacct_format_opts, sep='\\')
 
-# Merge to usage
+
+# ---- SBILL filter
+
+def pop_usage(mask):
+    for k in list(usage.keys()):
+        iremain = -1
+        for i in range(len(mask)):
+            if mask[i] :
+                iremain += 1
+            else:
+                del usage[k][iremain+1]
+
+
+def filter_usage(Col, List):
+    nrow = len(usage['Account'])
+    mask = [False]*nrow
+    for nr in range(nrow):
+        mask[nr] = usage[Col][nr].lower().startswith( tuple(k.lower() for k in List) )
+    pop_usage(mask)
+
+
+def filter_acct(Col, List):
+    nrow = len(usage['Account'])
+    mask = [False]*nrow
+    any_removed = False
+    for nr in range(nrow):
+        if usage[Col][nr] in List :
+            mask[nr] = True
+        else:
+            any_removed = True
+    pop_usage(mask)
+    return any_removed
+
+
+# --- Filter some / SBILL calculation
+
+# Only show jobs submitted using associated accounts (Second guard)
+# Strength: Correct, No loop hole
+# Weakness: Slow
+remove_nonassoc = False
+if isRestricted :
+    remove_nonassoc = filter_acct('Account', assoc)
+
+
+if len(reservation_selected) != 0 :
+    filter_usage('Reservation', reservation_selected)
+
+
+if len(state_selected) != 0 :
+    filter_usage('State', state_selected)
+
+
+usage['NCPUS'] = [ int(num) for num in usage['NCPUS'] ]
+if len(range_ncpu_minmax) >= 2 :
+    mask = [ (range_ncpu_minmax[0]<=value) & (value<=range_ncpu_minmax[1]) for value in usage['NCPUS'] ]
+    pop_usage(mask)
+
+
+if len(range_ngpu_minmax) >= 2 :
+    mask = [ (range_ngpu_minmax[0]<=value) & (value<=range_ngpu_minmax[1]) for value in usage[Treskey[1]] ]
+    pop_usage(mask)
+
+
+usage['ElapsedRaw'] = [ int(num) if num.isdigit() else 0 for num in usage['ElapsedRaw'] ]
+if len(runtime_minmax) >= 1 :
+    if len(runtime_minmax) == 1 :
+        mask = [ runtime_to_sec*runtime_minmax[0]<=value for value in usage['ElapsedRaw'] ]
+    else:
+        mask = [ (runtime_to_sec*runtime_minmax[0]<=value) & (value<runtime_to_sec*runtime_minmax[1]) for value in usage['ElapsedRaw'] ]
+    pop_usage(mask)
+    if runtime_to_sec == 1 :
+        runtime_unit = 'second'
+    elif runtime_to_sec == 60 :
+        runtime_unit = 'minute'
+    else:
+        runtime_unit = 'hour'
+
+
+usage[Service] = [ calService(b,s) for b,s in zip(usage[Treskey[0]],usage['ElapsedRaw']) ]
+if len(range_minmax) >= 1 :
+    if len(range_minmax) == 1 :
+        mask = [ range_minmax[0]<=value for value in usage[Service] ]
+    else:
+        mask = [ (range_minmax[0]<=value) & (value<range_minmax[1]) for value in usage[Service] ]
+    pop_usage(mask)
+
+
+# Remaining calculations
 usage["Billing"]  = usage.pop(Treskey[0])
 usage["NGPUS"]    = usage.pop(Treskey[1])
 usage["AllocRAM"] = usage.pop(Treskey[2])
+usage[CPUusage]    = [ calCPUusage(ncpu,s) for ncpu,s in zip(usage['NCPUS'],usage['ElapsedRaw']) ]
+usage[GPUusage]    = [ calGPUusage(ngpu,s) for ngpu,s in zip(usage['NGPUS'],usage['ElapsedRaw']) ]
+usage[BillingUnit] = [ calBillingUnit(b) for b in usage['Billing'] ]
 
-jobid_list = info['JobID'].copy()
-last_index = len(usage['JobID']) -1
-for k in list(info.keys()):
-    iremain = -1
-    for i in range(len(jobid_list)):
-        if jobid_list[i] == usage['JobID'][iremain+1] :
-            iremain += 1
-            if iremain == last_index :
-                del info[k][iremain+1:]
-                break
+
+# If no jobs remain after being filtered out
+if len(usage['Account']) == 0 :
+    if isRestricted :
+        print('*** No (associated) jobs to be displayed ***')
+        if remove_nonassoc :
+            print('= You can only see the jobs that are associated with your Slurm billing accounts')
+    else:
+        print('*** No jobs to be displayed ***')
+    exit(0)
+
+
+# --- SBILL calculation (continue)
+
+# Sum
+Total_SU_spent = sum( usage[Service] )
+Total_CPUusage_obtained = sum( usage[CPUusage] )
+Total_GPUusage_obtained = sum( usage[GPUusage] )
+
+# Convert Mem unit of AllocRAM
+if slurm_mem_unit in ['K','M','G','T','P'] :
+    mem_unit_ratio = {'K': 1, 'M': 2, 'G': 3, 'T': 4, 'P': 5}
+
+    if slurm_mem_decimal == None :
+        if slurm_mem_unit == 'M' or slurm_mem_unit == 'K' :
+            slurm_mem_decimal = 0
         else:
-            del info[k][iremain+1]
+            slurm_mem_decimal = 2
+    slurm_mem_format = '{:,.' + str(slurm_mem_decimal) + 'f}'
 
-if len(info['JobID']) == len(usage['JobID']) :
-    usage.update(info)
-else:
-    print('sbill: error: Inconsistent job lists.')
-    print('\nPlease capture and report this bug to your system admin and \"https://github.com/SKanoksi/SBILL-SLURM\"')
-    exit(1)
+    def convertMem(text, to_unit):
+        text = str(text)
+        if len(text) < 2 :
+            return text
+        from_unit = text[-1]
+        value = float(text[:-1])
+        value *= pow(1024, mem_unit_ratio[from_unit] - mem_unit_ratio[to_unit])
+        return slurm_mem_format.format(value) + to_unit
+
+    usage["AllocRAM"] = [ convertMem(m,slurm_mem_unit) for m in usage["AllocRAM"] ]
 
 
-# ---- Compute sum_by
+# --- Compute sum_by
 
 if len(sum_by) != 0 :
     tags = list(dict.fromkeys( usage[sum_by] ))  # Remove duplicates
@@ -1309,7 +1252,7 @@ if len(sum_by) != 0 :
         sumby_results[t][CPUusage] = 0.
         sumby_results[t][GPUusage] = 0.
         sumby_results[t]['NumJob'] = 0
-    for i in range(len(usage['JobID'])):
+    for i in range(len(usage['Account'])):
         t = usage[sum_by][i]
         sumby_results[t][Service] += usage[Service][i]
         sumby_results[t][CPUusage] += usage[CPUusage][i]
@@ -1317,7 +1260,10 @@ if len(sum_by) != 0 :
         sumby_results[t]['NumJob'] += 1
 
 
-# ----------- Save to ------------
+# ------------ Display results  ------------
+
+# --- Save to
+
 if csv_outfile != "" :
     csv_value = "%s" + csv_delimiter
     with open(csv_outfile, 'w') as f:
@@ -1333,7 +1279,7 @@ if csv_outfile != "" :
     is_show_only_summary = True
 
 
-# ------------ Print ------------
+# --- Print
 
 if not is_show_only_summary :
 
@@ -1381,7 +1327,7 @@ if not is_show_only_summary :
                 num_char = max([len(name_opt)+1, len_opt[i]+1])
                 HeadFormat  += '{:>' + str(num_char) + '}|'
                 PrintFormat += '{:>' + str(num_char) + '}|'
-                for nr in range(len(usage['JobID'])):
+                for nr in range(len(usage['Account'])):
                     usage[name_opt][nr] = str(usage[name_opt][nr])[0:len_opt[i]]
 
     HeadFormat = HeadFormat.split('|')
@@ -1392,7 +1338,7 @@ if not is_show_only_summary :
         print(HeadFormat[i].format(display_format_opts[i]), end='')
     print('')
 
-    for nr in range(len(usage['JobID'])) :
+    for nr in range(len(usage['Account'])) :
         for i in range(len(display_format_opts)) :
             print(PrintFormat[i].format(usage[display_format_opts[i]][nr]), end='')
         print('')
@@ -1442,7 +1388,7 @@ Format = '{:,.' + str(CPUusageDecimal) + 'f}'
 try_cpu = Format.format(Total_CPUusage_obtained).split('.')
 Format = '{:,.' + str(GPUusageDecimal) + 'f}'
 try_gpu = Format.format(Total_GPUusage_obtained).split('.')
-try_job = '{:,}'.format(len(usage['JobID']))
+try_job = '{:,}'.format(len(usage['Account']))
 
 nl_digit = max([len(try_service[0]), len(try_cpu[0]), len(try_gpu[0]), len(try_job)])
 nr_digit = max([ServiceDecimal, CPUusageDecimal, GPUusageDecimal])
@@ -1608,4 +1554,3 @@ if is_show_job_histogram :
         print(Format.format(count[j]), end='')
         print('   '+bar[j], end='')
         print('')
-

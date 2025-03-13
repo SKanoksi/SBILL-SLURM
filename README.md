@@ -2,7 +2,7 @@
 Query SLURM job billing and information -- a wrapper of SLURM SACCT command
 
 SBILL version:
-1.5.0-RC5 (21 January 2025)
+1.5.1 (12 March 2025)
 
 Dependencies:
 + python (>=3.1.0)  -- subprocess, math, os, sys, str.format
@@ -28,21 +28,23 @@ JOB FILTER/QUERY OPTIONS:
   -L, --allclusters                 jobs on any clusters
   -p, --partition=<partition,...>   jobs on these partition(s)
   -w, --nodelist=<nodename,...>     jobs on these node(s)
+      --reservation=<reserv,...>    jobs that run using these reservation(s)
+      --state=<job_state,...>       jobs that are marked with these state(s)
 
   -N, --nnodes=<num> or <min-max>   jobs that use the specified number of nodes
   -C, --ncpus=<num> or <min-max>    jobs that use the specified number of CPUs
   -G, --ngpus=<num> or <min-max>    jobs that use the specified number of GPUs
 
-      --state=<job_state,...>       jobs that are marked with these state(s)
-      --runtime=<min[-max:unit]>    jobs that have runtime within the range,
+      --range=<min[-max]>           jobs charged within the specified 'SHr' range
+      --runtime=<min[-max[:unit]]>  jobs that have runtime within the range,
                                     where unit is 'sec', 'min', or 'hr'
-      --range=<min[-max]>           jobs charged within the specified Service range
+                                      Default: in 'hr' unit 
 
   -E, --endtime=<time>              jobs that start before this time point
                                       Default: now
   -S, --starttime=<time>            jobs that end after this time point
                                       Default: today at 00:00:00
-                                    where <time> format is...                 
+                                    where the format of <time> is...          
                                       YYYY-MM-DD[THH:MM[:SS]] or              
                                       MM/DD[/YY]-HH:MM[:SS] or                
                                       MMDD[YY] or MM/DD[/YY] or MM.DD[.YY] or 

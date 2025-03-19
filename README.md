@@ -24,18 +24,29 @@ JOB FILTER/QUERY OPTIONS:
   -a, --allusers                    jobs submitted by any users
   -u, --user=<username,...>         jobs submitted by these user(s)
                                       Default: only you
+  -g, --group=<group,...>           jobs started with the group(s)
+
+  -L, --allclusters                 jobs on any clusters
+      --local                       jobs on local cluster
+  -M, --clusters=<cluster,...>      jobs started on the cluster(s)
+      --associations=<assoc,...>    jobs under the association(s)
+      --federation                  jobs from the federation
 
   -p, --partition=<partition,...>   jobs on these partition(s)
   -w, --nodelist=<nodename,...>     jobs on these node(s)
       --reservation=<reserv,...>    jobs that run using these reservation(s)
       --state=<job_state,...>       jobs that are marked with these state(s)
 
+      --constraints=<contraint,...> jobs requesting these constraint(s)
+  -q, --qos=<qos,...>               jobs that run using these QoS
+  -W, --wckeys=<wckey,...>          jobs with specified wckey(s)
+
   -N, --nnodes=<num> or <min-max>   jobs that get the specified number of nodes
   -C, --ncpus=<num> or <min-max>    jobs that get the specified number of CPUs
   -G, --ngpus=<num> or <min-max>    jobs that get the specified number of GPUs
       --ram=<min[-max]>             jobs that get RAM  within the specified range
 
-      --range=<min[-max]>           jobs charged within the specified 'SHr' range
+      --range=<min[-max]>           jobs charged within the specified 'Service' range
       --runtime=<min[-max[:unit]]>  jobs that have runtime within the range
       --waittime=<min[-max[:unit]]> jobs that have waittime within the range
                                     where unit of them is 'sec', 'min', or 'hr'
@@ -68,7 +79,7 @@ JOB DISPLAY/OUTPUT OPTIONS:
 
   -H, --histogram=<nbin>[:field]    display text-based histogram of the jobs.
                                     use --histogram=help to see available fields
-                                      Default: SHr
+                                      Default: Service
 
   -X, --summary                     display only the summary report
       --sum-by-account              display sum(s) of the filtered jobs by account
@@ -84,7 +95,6 @@ OTHERS:
   -V, --version                     print SBILL version and few details, then exit
       --units=[KMGTP]               specify RAM memory unit. Default: G (GiB)
       --scientific                  use scientific number format (e)
-
 ```
 
 | Example: sbill --long xxx|

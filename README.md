@@ -5,7 +5,7 @@ SBILL version:
 1.5.2 (19 March 2025)
 
 Dependencies:
-+ python (>=3.1.0)  -- subprocess, math, os, sys, str.format, datetime
++ python (>=3.3.0)  -- subprocess, math, os, sys, str.format, datetime
 + numpy  (>=1.11.0) -- Optional, only for --histogram option
 + SLURM
 

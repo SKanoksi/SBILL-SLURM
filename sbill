@@ -15,7 +15,7 @@
 
 # ---- START OF COMPILE-TIME SETUP -----
 
-__version__ = '1.5.2 (19-March-2025)'
+__version__ = '1.5.2 (21-May-2025)'
 __HPC__ = 'XXX HPC of XXX center'
 
 # Set up
@@ -26,7 +26,7 @@ __HPC__ = 'XXX HPC of XXX center'
 Treskey = ['billing','gres/gpu','mem']  # Keywords to be captured from AllocTres in sacct
 
 Service    = 'Service'
-calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100
+calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100  # From Slurm billing
 ServiceDecimal = 3
 
 CPUusage    = 'CPU-core-hour'
@@ -42,20 +42,20 @@ calRAMusage = lambda ram, elapsedraw : ram*elapsedraw/60/60/1024  # Sbill defaul
 RAMusageDecimal = 2
 
 BillingUnit    = 'ServicePerHour'
-calBillingUnit = lambda billing : billing/100
+calBillingUnit = lambda billing : billing/100  # From Slurm billing
 BillingUnitDecimal = 3
 
 GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]
 GLOBAL_SBILL_LONG_FORMAT    = ['JobID','JobName%10','User','Account','Partition','NNodes','NCPUS','NGPUS','AllocRAM','Elapsed','State',BillingUnit,Service]
 
-isRestricted  = True           # True = display only jobs related by associated accounts
-AdminAccounts = ['admin']     # Admin account to grant special permission even when isRestricted = True
+isRestricted  = True          # True = display only jobs related by associated accounts
+AdminAccounts = ['admin']    # Admin account to grant special permission even when isRestricted = True
 # Note:
 # - 'AdminAccounts' is meaningless when 'PrivateData' is enforced in slurm.conf
 # - SBILL restrict feature is provided as an additional guard on top of 'PrivateData',
 #   since 'Service' is more sensitive information <--> 'billing' is hidden in SACCT AllocTres
 
-SLURM_STARTDATE  = '2025-03-12T00:00:00'     # SACCT/Slurm accounting start date
+SLURM_STARTDATE  = '2025-05-21T00:00:00'     # SACCT/Slurm accounting start date
 AdminNoteMessage = 'IMPORTANT: XXX'   # Message to be displayed when --version is invoked
 
 sacct_all_format_opts = ['Account', 'AdminComment', 'AllocCPUS', 'AllocNodes', 'AllocTRES', 'AssocID',
@@ -68,7 +68,7 @@ sacct_all_format_opts = ['Account', 'AdminComment', 'AllocCPUS', 'AllocNodes', '
         'Start', 'State', 'Submit', 'SubmitLine', 'Suspended', 'SystemComment', 'SystemCPU', 'Timelimit', 'TimelimitRaw', 'TotalCPU',
         'UID', 'User', 'UserCPU', 'WCKey', 'WCKeyID', 'WorkDir']
 
-sbill_all_format_opts = [Service, BillingUnit, CPUusage, GPUusage, RAMusage,
+sbill_all_format_opts = [Service, BillingUnit, CPUusage, GPUusage, RAMusage, 
         'WaitTime', 'WaitTimeRAW', 'NGPUS', 'AllocRAM', 'Billing', 'Default', 'Long']
 
 def show_sbill_usage():
@@ -138,8 +138,15 @@ def show_sbill_usage():
     print("                                       export SBILL_FORMAT=<field,...>")
     print("      --helpformat                  display all available fields, then exit")
     print("")
+    # Simple quick histogram
+    # --> to get a nicer bin range in x-axis
+    #     with y-axis other than number of jobs (i.e., Service) [Those meaningful when get summed]
+    # --> issue sbill iteratively for each of your desired bin range --> Manually plot in ...
     print("  -H, --histogram=<nbin>[:field]    display text-based histogram of the jobs.")
     print("                                    use --histogram=help to see available fields")
+    print("                                      Default: "+Service)
+    print("  --timeseries=[field:]<step-hour>  display time-series table of utilization")
+    print("                                    and a text-based graph of the specified field")
     print("                                      Default: "+Service)
     print("")
     print("  -X, --summary                     display only the summary report")
@@ -250,6 +257,9 @@ reservation_selected = []
 is_show_job_histogram = False
 nbin_histogram = 1
 field_histogram = Service
+is_show_timeseries = False
+timestepsize_timeseries = 6
+field_timeseries = Service
 range_ram_minmax = []
 range_minmax = []
 runtime_minmax = []
@@ -269,8 +279,8 @@ is_show_only_summary = False
 query_account_list = []
 trim_jobtime = False
 float_stringformat = 'f'
-has_starttime_filter = False
-has_endtime_filter = False
+#has_starttime_filter = False
+#has_endtime_filter = False
 
 def parse_filter_opts(i, opt1, opt2, has_argv, var=slurm_filter_opts):
     # Case 1: -X xxx
@@ -424,7 +434,7 @@ while i < len(argv) :
         print('Invalid input argument in -S, --starttime option :: Starttime was NOT specified.')
         exit(1)
     if i != j :
-        has_starttime_filter = True
+        #has_starttime_filter = True
         continue
 
     try:
@@ -433,7 +443,7 @@ while i < len(argv) :
         print('Invalid input argument in -E, --endtime option :: Endtime was NOT specified.')
         exit(1)
     if i != j :
-        has_endtime_filter = True
+        #has_endtime_filter = True
         continue
 
     try:
@@ -821,11 +831,66 @@ while i < len(argv) :
             else:
                 print('Invalid input argument in -H, --histogram option :: cannot convert \''+temp_opt[0]+'\' to a valid number of bin')
                 exit(1)
-    if i != j :
-        temp_opt = [] ;
+    if i != j : 
+        temp_opt = [] ; 
         if field_histogram.lower() in ['waithour','waitmin','waitsec']:
             is_cal_waittimeraw = True
         continue ;
+
+    try:
+        i = parse_filter_opts(i,'--timeseries','--timeseries', has_argv=True, var=temp_opt) # Borrow
+    except IndexError :
+        print('Invalid input argument in --timeseries option :: Step hour is required; for instance, 1, 3, 6 or 24.')
+        exit(1)
+    if len(temp_opt) > 1 :
+        is_show_timeseries = True
+        temp_opt = temp_opt[1].split(':')
+        if len(temp_opt) >= 2 :
+            field_timeseries = temp_opt[0]
+            timestepsize_timeseries = temp_opt[1]
+        else:
+            timestepsize_timeseries = temp_opt[0]
+        try:
+            timestepsize_timeseries = max(int(timestepsize_timeseries),1)
+        except ValueError :
+            print('Invalid input argument in --timeseries option :: Step hour MUST be an integer.')
+            exit(1)
+        for field in [Service, CPUusage, GPUusage, RAMusage]:
+            if field_timeseries.lower() == field.lower() :
+                field_timeseries = field
+        if not field_timeseries in [Service, CPUusage, GPUusage, RAMusage]:
+            print('Invalid input argument in --timeseries option :: Field must be', end='')
+            for field in [Service, CPUusage, GPUusage, RAMusage]:
+                print(' \''+field+'\'', end='')
+            print('.')
+            exit(1)
+    elif len(temp_opt) == 1 :
+        is_show_timeseries = True
+        if temp_opt[0].startswith('--timeseries=') :
+            temp_opt = temp_opt[0][13:].split(':')
+            if len(temp_opt) >= 2 :
+                field_timeseries = temp_opt[0]
+                timestepsize_timeseries = temp_opt[1]
+            else:
+                timestepsize_timeseries = temp_opt[0]
+            try:
+                timestepsize_timeseries = max(int(timestepsize_timeseries),1)
+            except ValueError :
+                print('Invalid input argument in --timeseries option :: Step hour MUST be an integer.')
+                exit(1)
+            for field in [Service, CPUusage, GPUusage, RAMusage]:
+                if field_timeseries.lower() == field.lower() :
+                    field_timeseries = field
+            if not field_timeseries in [Service, CPUusage, GPUusage, RAMusage]:
+                print('Invalid input argument in --timeseries option :: Field can only be ', end='')
+                for field in [Service, CPUusage, GPUusage, RAMusage]:
+                    print('\''+field+'\' ', end='')
+                print('.')
+                exit(1)
+        else:
+            print('Invalid format of --timeseries= option.\nSee \'sbill --help\'')
+            exit(1)
+    if i != j : temp_opt = [] ; continue ;
 
     if argv[i].startswith('--to_csv'):
         if argv[i] == '--to_csv' :
@@ -1146,8 +1211,11 @@ if field_histogram.lower() in ['nnode','nodes','nnodes','node'] and not 'NNodes'
     sacct_format_opts.append('NNodes')
 if (is_cal_waittime or is_cal_waittimeraw or len(waittime_minmax) >= 1) and not 'Submit' in sacct_format_opts :
     sacct_format_opts.append('Submit')
-if (is_cal_waittime or is_cal_waittimeraw or len(waittime_minmax) >= 1) and not 'Start' in sacct_format_opts :
+if (is_cal_waittime or is_cal_waittimeraw or len(waittime_minmax) >= 1 or is_show_timeseries) and not 'Start' in sacct_format_opts :
     sacct_format_opts.append('Start')
+if is_show_timeseries and not 'End' in sacct_format_opts :
+    sacct_format_opts.append('End')
+
 
 # ------  Functions to get data from SLURM ------
 
@@ -1248,7 +1316,7 @@ def AssocAccount_from_sacctmgr():
     else:
         data = parse_sacctmgr(data.decode('utf-8'))
 
-    return data[1:]
+    return data
 
 
 # ------------ Main program  ------------
@@ -1367,15 +1435,15 @@ if len(range_minmax) >= 1 :
 
 if is_cal_waittime or is_cal_waittimeraw or len(waittime_minmax) >= 1 :
     from datetime import datetime as dt
-    currenttime = dt.now()
+    currenttime = dt.now() 
 
     if is_cal_waittime :
         def calWaitTime(submit, start):
             try:
-                end = dt.strptime(start,"%Y-%m-%dT%H:%M:%S")
+                end = dt.strptime(start,"%Y-%m-%dT%H:%M:%S") 
             except ValueError:
                 end = currenttime
-            try:
+            try: 
                 start = dt.strptime(submit,"%Y-%m-%dT%H:%M:%S")
             except ValueError:
                 start = currenttime
@@ -1390,7 +1458,7 @@ if is_cal_waittime or is_cal_waittimeraw or len(waittime_minmax) >= 1 :
     if is_cal_waittimeraw or len(waittime_minmax) >= 1 :
         def calWaitTimeRaw(submit, start):
             try:
-                end = dt.strptime(start,"%Y-%m-%dT%H:%M:%S")
+                end = dt.strptime(start,"%Y-%m-%dT%H:%M:%S")  
             except ValueError:
                 end = currenttime
             try:
@@ -1399,7 +1467,7 @@ if is_cal_waittime or is_cal_waittimeraw or len(waittime_minmax) >= 1 :
                 start = currenttime
             interval = end - start
             return int(interval.total_seconds())
-
+        
         usage['WaitTimeRAW'] = [ calWaitTimeRaw(su,st) for su,st in zip(usage['Submit'],usage['Start']) ]
 
     if len(waittime_minmax) >= 1 :
@@ -1419,7 +1487,7 @@ if is_cal_waittime or is_cal_waittimeraw or len(waittime_minmax) >= 1 :
 # Convert Mem unit of AllocRAM
 if not slurm_mem_unit in ['K','M','G','T','P']:
     slurm_mem_unit = 'G'
-
+    
 mem_unit_ratio = {'K': 1, 'M': 2, 'G': 3, 'T': 4, 'P': 5}
 def convertMem(text, to_unit):
     text = str(text)
@@ -1460,7 +1528,7 @@ mem_to_gb = pow(1024, mem_unit_ratio[slurm_mem_unit] - mem_unit_ratio['G'])
 # Compute usages
 usage[CPUusage] = [ calCPUusage(ncpu,s) for ncpu,s in zip(usage['NCPUS'],usage['ElapsedRaw']) ]
 usage[GPUusage] = [ calGPUusage(ngpu,s) for ngpu,s in zip(usage['NGPUS'],usage['ElapsedRaw']) ]
-usage[RAMusage] = [ calRAMusage(mem*mem_to_gb,s) for mem,s in zip(usage['AllocRAM'],usage['ElapsedRaw']) ]
+usage[RAMusage] = [ calRAMusage(mem*mem_to_gb,s) for mem,s in zip(usage['AllocRAM'],usage['ElapsedRaw']) ] 
 usage[BillingUnit] = [ calBillingUnit(b) for b in usage['Billing'] ]
 
 # --- Compute Sum
@@ -1494,6 +1562,8 @@ if len(sum_by) != 0 :
 
 # --- Add 'AllocRAM' unit
 Format = '{:,.' + str(slurm_mem_decimal) + 'f}'
+if is_show_job_histogram or is_show_timeseries :
+    usage["AllocRAMRAW"] = usage["AllocRAM"].copy()
 usage["AllocRAM"] = [ Format.format(m)+slurm_mem_unit for m in usage["AllocRAM"] ]
 
 # --- Save to
@@ -1696,6 +1766,7 @@ if len(sum_by) != 0 :
         print('')
     print('')
 
+
 # 5. Additionally print histogram
 if is_show_job_histogram :
     from numpy import histogram as hist
@@ -1718,7 +1789,7 @@ if is_show_job_histogram :
         Decimal = BillingUnitDecimal + 1
     elif field_histogram.lower() in ['allocram','ram','mem'] :
         display_field = 'AllocRAM (' + slurm_mem_unit + ')'
-        field_histogram = 'AllocRAM'
+        field_histogram = 'AllocRAMRAW'
         usage[field_histogram] = [ int(float(value[:-1].replace(",",""))) for value in usage[field_histogram] ]
         Decimal = slurm_mem_decimal + 1
     elif field_histogram.lower() in ['nnode','nodes','nnodes','node'] :
@@ -1737,33 +1808,33 @@ if is_show_job_histogram :
         Decimal = 1
     elif field_histogram.lower() == 'runmin' :
         display_field = 'RunMin'
-        field_histogram = 'ElapsedRaw'
+        field_histogram = 'ElapsedRawMin'
         Decimal = 1
-        usage[field_histogram] = [ float(value)/60.0 for value in usage[field_histogram] ]
+        usage[field_histogram] = [ float(value)/60.0 for value in usage['ElapsedRaw'] ]
     elif field_histogram.lower() == 'runhour' :
         display_field = 'RunHour'
-        field_histogram = 'ElapsedRaw'
+        field_histogram = 'ElapsedRawHr'
         Decimal = 1
-        usage[field_histogram] = [ float(value)/60.0/60.0 for value in usage[field_histogram] ]
+        usage[field_histogram] = [ float(value)/60.0/60.0 for value in usage['ElapsedRaw'] ]
     elif field_histogram.lower() == 'waitsec' :
         display_field = 'WaitSec'
         field_histogram = 'WaitTimeRAW'
         Decimal = 1
     elif field_histogram.lower() == 'waitmin' :
         display_field = 'WaitMin'
-        field_histogram = 'WaitTimeRAW'
+        field_histogram = 'WaitTimeRAWMin'
         Decimal = 1
-        usage[field_histogram] = [ float(value)/60.0 for value in usage[field_histogram] ]
+        usage[field_histogram] = [ float(value)/60.0 for value in usage['WaitTimeRAW'] ]
     elif field_histogram.lower() == 'waithour' :
         display_field = 'WaitHour'
-        field_histogram = 'WaitTimeRAW'
+        field_histogram = 'WaitTimeRAWHr'
         Decimal = 1
-        usage[field_histogram] = [ float(value)/60.0/60.0 for value in usage[field_histogram] ]
+        usage[field_histogram] = [ float(value)/60.0/60.0 for value in usage['WaitTimeRAW'] ]
     else:
         print('sbill: error: Unsupported histogram field \''+field_histogram+'\'\nSee \'sbill --help\'')
         exit(1)
 
-    if not (field_histogram.lower() == 'allocram' or field_histogram.lower() == 'elapsedraw' or field_histogram.lower() == 'waittimeraw') :
+    if not (field_histogram.lower().startswith('allocram') or field_histogram.lower().startswith('elapsedraw') or field_histogram.lower().startswith('waittimeraw')) :
         display_field = field_histogram
 
     if field_histogram.lower() == Service.lower() :
@@ -1819,3 +1890,102 @@ if is_show_job_histogram :
         print(Format.format(count[j]), end='')
         print('   '+bar[j], end='')
         print('')
+    print('')
+
+
+# 6. Additionally print timeseries
+if is_show_timeseries :
+    from datetime import datetime as dt
+    from datetime import timedelta
+    from math import ceil
+
+    currenttime = dt.now()
+    def date2sec(time):
+        try:
+            time = dt.strptime(time,"%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            time = currenttime
+        return time
+
+    timestamp_start = [ date2sec(time) for time in usage['Start'] ]
+    timestamp_end   = [ date2sec(time) for time in usage['End']   ]
+
+    StartTime = min(timestamp_start)
+    StartTime = StartTime.replace(minute=0, second=0, microsecond=0)
+    EndTime   = max(timestamp_end)
+    if EndTime.minute != 0 or EndTime.second != 0 or EndTime.microsecond != 0 :
+        EndTime = EndTime.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    StepTime = timedelta(hours=timestepsize_timeseries)
+
+    # Allocate table and find number of row
+    timeseries_table = {}
+    nrow = 0
+    l_time = StartTime
+    while l_time < EndTime :
+        r_time = l_time + StepTime
+        timeseries_table[l_time] = {}
+        timeseries_table[l_time][Service]  = 0.
+        timeseries_table[l_time][CPUusage] = 0.
+        timeseries_table[l_time][GPUusage] = 0.
+        timeseries_table[l_time][RAMusage] = 0.
+        nrow += 1
+        l_time += StepTime
+    timeseries_graph = [None]*nrow
+
+    # Compute 
+    l_time = StartTime
+    irow = 0
+    while l_time < EndTime:
+        r_time = l_time + StepTime
+        for i in range(len(usage['ElapsedRaw'])):
+            interval    = min(timestamp_end[i], r_time) - max(timestamp_start[i], l_time)
+            intervalraw = interval.total_seconds()
+            intervalraw = 0 if intervalraw < 0 else intervalraw
+            timeseries_table[l_time][Service]  += calService(usage['Billing'][i], intervalraw)
+            timeseries_table[l_time][CPUusage] += calCPUusage(usage['NCPUS'][i], intervalraw)
+            timeseries_table[l_time][GPUusage] += calGPUusage(usage['NGPUS'][i], intervalraw)
+            timeseries_table[l_time][RAMusage] += calRAMusage(usage['AllocRAMRAW'][i], intervalraw)
+        timeseries_graph[irow] = timeseries_table[l_time][field_timeseries]
+        irow += 1
+        l_time += StepTime
+
+    # Print timeseries graph 
+    step = ceil(max(timeseries_graph)/65)     # at most 65 stars
+    #step = int( ceil(step/NUM)*NUM )  # ceil to nearest multiply of NUM
+    print('{:<24}'.format('  Start TimeStamp   |'), end='')
+    print(' Horizontal graph where each x ~ '+str(step)+' '+field_timeseries+' or less')
+
+    irow = 0
+    for k in timeseries_table.keys() :
+        print(k, end=' | ')
+        bar = 'x' * int(ceil(timeseries_graph[irow]/step))
+        print('   '+bar)
+        irow += 1
+    print('')
+
+    # Print timeseries table
+    Decimal = [ServiceDecimal,CPUusageDecimal,GPUusageDecimal,RAMusageDecimal]
+    Tag     = [Service,CPUusage,GPUusage,RAMusage]
+    
+    print('{:<22}'.format('  Start TimeStamp   |'), end='')
+    Format  = ''
+    for T,D in zip(Tag, Decimal) :
+        try_format = '{:,.' + str(D) + 'f}'
+        num_char = 0
+        for k in list(timeseries_table.keys()):
+            num_char = max([num_char, len(try_format.format(timeseries_table[k][T]))])
+        num_char = max([ len(T), num_char ]) + 3
+        Format += '{:>' + str(num_char) + ',.' + str(D) + 'f}|'
+        HeadFormat = '{:>' + str(num_char) + '}'
+        print(HeadFormat.format(T), end='')
+    print('')
+    Format = Format.split('|')
+
+    for k in timeseries_table.keys() :
+        print(k, end=' | ')
+        print(Format[0].format(timeseries_table[k][Service]), end='')
+        print(Format[1].format(timeseries_table[k][CPUusage]), end='')
+        print(Format[2].format(timeseries_table[k][GPUusage]), end='')
+        print(Format[3].format(timeseries_table[k][RAMusage]), end='')
+        print('')
+    print('')

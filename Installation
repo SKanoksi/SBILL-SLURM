@@ -1,65 +1,23 @@
 Installation:
-= sbill is a single python script, internally invokes SLURM commands
+= sbill is a single python script that gets jobs information from invoking SLURM commands, using Subprocess module
 
-1. Edit the header of sbill to match your cluster billing system
+1. Edit the "COMPILE-TIME SETUP" header section of sbill script to match your cluster billing system, 
+i.e., the usage unit and its calculation, billing unit and its calculation, help/manual page, admin message, restriction, slurm options, ...
 
---------------
-__version__ = '1.5.0-RC3 (10-Jan-2025)'
-__HPC__ = 'XXX HPC of XXX center'
-
-# Set up
-# Requirement:
-# 1) Treskey[0] = Slurm billing
-# 2) Treskey[1] = Num GPU
-# 3) Treskey[2] = Ram memory
-Treskey = ['billing','gres/gpu','mem']  # Keywords to be captured from AllocTres in sacct
-SLURM_STARTDATE = '2025-01-10T00:00:00'
-
-Service    = 'Service'
-calService = lambda billing, elapsedraw : billing*elapsedraw/60/60/100
-ServiceDecimal = 3
-
-CPUusage    = 'CPU-core-hour'
-calCPUusage = lambda ncpu, elapsedraw : ncpu*elapsedraw/60/60
-CPUusageDecimal = 2
-
-GPUusage    = 'GPU-card-hour'
-calGPUusage = lambda ngpu, elapsedraw : ngpu*elapsedraw/60/60
-GPUusageDecimal = 2
-
-BillingUnit    = 'ServicePerHour'
-calBillingUnit = lambda billing : billing/100
-BillingUnitDecimal = 3
-
-GLOBAL_SBILL_DEFAULT_FORMAT = ['JobID','JobName%10','Account','Partition','NCPUS','NGPUS','Elapsed','State',Service]
-GLOBAL_SBILL_LONG_FORMAT    = ['JobID','JobName%10','User','Account','Partition','NNodes','NCPUS','NGPUS','AllocRAM','NodeList%24','Elapsed','State',BillingUnit,Service]
-
-isRestricted  = True          # True = display only jobs related by associated accounts
-AdminAccounts = ['admin']     # Admin account to grant special permission even when isRestricted = True
---------------
-
-*** Important note ***
-It is recommended to hide the setup of your system.
-In this case, you could use cython to convert and compile sbill to an executable. 
-For example, using python3.10
+2. (Optional) It is recommended to hide the setup of your system by compile sbill into an executable.
+For example, when using python3.10
 --> cython --embed -3 sbill
 --> cc -O3 $(python3-config --includes) sbill.c -o sbill.exe $(python3-config --ldflags) -lpython3.10
 
-
-2. Copy sbill or sbill.exe to a directory, such as /usr/local/bin 
+3. Copy sbill or sbill.exe to a directory, such as /usr/local/bin (or /usr/bin, /bin)
 --> cp sbill /usr/local/bin
 --> cp sbill.exe /usr/local/sbill
 
-
-3. Change permission of the file, such as
+4. Check/Change permission of the file, such as
 --> chomd 755 /usr/local/bin/sbill
 --> chomd 751 /usr/local/bin/sbill
 
-
-4. In ~/.bashrc, prepend the path of the directory to the PATH environment variable 
-   (if not already present in it --> try echo $PATH)
---> vi .bashrc
+5. In /etc/bashrc or each individual ~/.bashrc, prepend the path of the directory to the PATH environment variable (if not already done)
 --> export PATH=/usr/local/bin:${PATH} # (Last line of ~/.bashrc)
 
-
-5. Try 'sbill -h' or 'sbill -V'
+6. Relogin and try 'sbill -h' or 'sbill -V'

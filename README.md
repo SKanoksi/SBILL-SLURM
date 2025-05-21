@@ -2,12 +2,16 @@
 Query SLURM job billing and information -- a wrapper of SLURM SACCT command
 
 SBILL version:
-1.5.2 (19 March 2025)
+1.5.2 (21 May 2025)
 
 Dependencies:
 + python (>=3.3.0)  -- subprocess, math, os, sys, str.format, datetime
 + numpy  (>=1.11.0) -- Optional, only for --histogram option
 + SLURM
+
+*** ANNOUNCEMENT ***
+If you encounter any issues employing/using SBILL-SLURM on your system, you could also submit an issue on this GitHub.
+We will try our best to assist you, since we have become aware that certain SLURM versions and configurations may require additional adjustments.
 
 -----
 ```txt
@@ -80,6 +84,9 @@ JOB DISPLAY/OUTPUT OPTIONS:
   -H, --histogram=<nbin>[:field]    display text-based histogram of the jobs.
                                     use --histogram=help to see available fields
                                       Default: Service
+  --timeseries=[field:]<step-hour>  display time-series table of utilization
+                                    and a text-based graph of the specified field
+                                      Default: Service
 
   -X, --summary                     display only the summary report
       --sum-by-account              display sum(s) of the filtered jobs by account
@@ -100,3 +107,16 @@ OTHERS:
 | Example: sbill --long xxx|
 | :-----------------: |
 | ![](Example_long.png) |
+
+| Example: sbill --sumbyuser xxx|
+| :-----------------: |
+| ![](Example_sumby.png) |
+
+| Example: sbill --histogram xxx|
+| :-----------------: |
+| ![](Example_histogram.png) |
+
+| Example: sbill --timeseries xxx|
+| :-----------------: |
+| ![](Example_timeseries.png) |
+
